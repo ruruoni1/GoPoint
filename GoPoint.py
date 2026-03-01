@@ -1173,8 +1173,10 @@ class AutoUpdater:
                     
                     # 3. Start the NEW exe
                     subprocess.Popen([current_exe], shell=False)
-                    # 4. Quit this old one
-                    QApplication.quit()
+                    # 4. Quit this old one (ensure it's on the main thread)
+                    QTimer.singleShot(0, lambda: QApplication.quit())
+                    # Hard exit after a short delay to allow the new process to settle
+                    QTimer.singleShot(100, lambda: os._exit(0))
                 except Exception as e:
                     # Rollback if download fails
                     if os.path.exists(old_exe):
