@@ -996,7 +996,107 @@ class ChangelogDialog(QDialog):
         self.close_btn.setText(texts.get("close", "Close"))
         self.browser.setHtml(texts.get("changelog", "<h2>No Changelog Available</h2>"))
 
-# ... existing code ...
+class AutoUpdater:
+    @staticmethod
+    def check_and_prompt(parent_widget, profile_manager, manual_check=False):
+        def _check():
+            try:
+                url = 'https://api.github.com/repos/ruruoni1/GoPoint/releases/latest'
+                req = urllib.request.Request(url, headers={'User-Agent': 'GoPoint-Updater'})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    latest_version_tag = data.get('tag_name', '')
+                    latest_version = latest_version_tag.lstrip('v')
+                    
+                    if latest_version > APP_VERSION:
+                        asset_url = None
+                        for asset in data.get('assets', []):
+                            if asset['name'].endswith('.exe'):
+                                asset_url = asset['browser_download_url']
+                                break
+                        
+                        if asset_url:
+                            # Prompt user in main thread
+                            QTimer.singleShot(0, lambda: AutoUpdater._prompt_update(parent_widget, profile_manager, latest_version, asset_url))
+                    elif manual_check:
+                        QTimer.singleShot(0, lambda: AutoUpdater._notify_latest(parent_widget, profile_manager))
+            except Exception as e:
+                print(f"Update check failed: {e}")
+                if manual_check:
+                    QTimer.singleShot(0, lambda: AutoUpdater._notify_error(parent_widget, profile_manager))
+                    
+        threading.Thread(target=_check, daemon=True).start()
+
+    @staticmethod
+    def _get_tr(profile_manager, key):
+        lang = profile_manager.language
+        return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+
+    @staticmethod
+    def _notify_latest(parent_widget, profile_manager):
+        QMessageBox.information(parent_widget, 
+                                AutoUpdater._get_tr(profile_manager, "update_available"), 
+                                AutoUpdater._get_tr(profile_manager, "update_latest"))
+                                
+    @staticmethod
+    def _notify_error(parent_widget, profile_manager):
+        QMessageBox.warning(parent_widget, 
+                            AutoUpdater._get_tr(profile_manager, "update_available"), 
+                            AutoUpdater._get_tr(profile_manager, "update_error"))
+
+    @staticmethod
+    def _prompt_update(parent_widget, profile_manager, new_version, download_url):
+        title = AutoUpdater._get_tr(profile_manager, "update_available")
+        msg_template = AutoUpdater._get_tr(profile_manager, "update_msg")
+        msg = msg_template.format(new_version=new_version, current_version=APP_VERSION)
+        
+        reply = QMessageBox.question(parent_widget, title, msg, 
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            AutoUpdater._perform_update(parent_widget, profile_manager, download_url)
+
+    @staticmethod
+    def _perform_update(parent_widget, profile_manager, download_url):
+        # Prevent further interaction
+        if hasattr(parent_widget, 'setEnabled'):
+            parent_widget.setEnabled(False)
+            
+        def _download():
+            try:
+                import shutil
+                temp_exe = os.path.join(tempfile.gettempdir(), "GoPoint_update.exe")
+                req = urllib.request.Request(download_url, headers={'User-Agent': 'GoPoint-Updater'})
+                with urllib.request.urlopen(req, timeout=30) as response, open(temp_exe, 'wb') as out_file:
+                    shutil.copyfileobj(response, out_file)
+                
+                # Create bat script to replace running exe
+                current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
+                if not getattr(sys, 'frozen', False):
+                    print("Update downloaded to temp, but running in dev mode. Skipping replace.")
+                    return
+                
+                bat_path = os.path.join(tempfile.gettempdir(), "update_gopoint.bat")
+                bat_content = f'''@echo off
+echo Updating GoPoint...
+ping 127.0.0.1 -n 3 > nul
+move /y "{temp_exe}" "{current_exe}"
+start "" "{current_exe}"
+del "%~f0"
+'''
+                with open(bat_path, 'w', encoding='utf-8') as f:
+                    f.write(bat_content)
+                
+                # Execute bat and quit
+                subprocess.Popen(bat_path, shell=True)
+                QTimer.singleShot(0, QApplication.instance().quit)
+                
+            except Exception as e:
+                print(f"Update download failed: {e}")
+                QTimer.singleShot(0, lambda: AutoUpdater._notify_error(parent_widget, profile_manager))
+                if hasattr(parent_widget, 'setEnabled'):
+                    QTimer.singleShot(0, lambda: parent_widget.setEnabled(True))
+                    
+        threading.Thread(target=_download, daemon=True).start()
 
 class SettingsDialog(QDialog):
     def __init__(self, overlay, parent=None):
