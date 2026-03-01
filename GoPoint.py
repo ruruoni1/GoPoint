@@ -30,6 +30,11 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 import winreg # For Registry access
+import urllib.request
+import urllib.error
+import threading
+import tempfile
+import subprocess
 
 APP_VERSION = "1.0.6"
 
@@ -55,6 +60,11 @@ TRANSLATIONS = {
         "length": "트레일 길이",
         "fade_out": "투명도 감소 효과 (Fade Out)",
         "quit": "프로그램 종료",
+        "update_available": "업데이트 알림",
+        "update_msg": "새로운 버전({new_version})이 출시되었습니다.\n현재 버전: {current_version}\n\n지금 업데이트 하시겠습니까?",
+        "update_downloading": "업데이트 다운로드 중...",
+        "update_error": "업데이트 정보를 가져오는데 실패했습니다.",
+        "update_latest": "현재 최신 버전을 사용 중입니다.",
         "warn_delete_default": "기본(Default) 프로파일은 삭제할 수 없습니다.",
         "confirm_delete": "'{name}' 프로파일을 삭제하시겠습니까?",
         "dlg_save_title": "프로파일 저장",
@@ -146,6 +156,11 @@ TRANSLATIONS = {
         "length": "Trail Length",
         "fade_out": "Fade Out Effect",
         "quit": "Quit Program",
+        "update_available": "Update Available",
+        "update_msg": "A new version ({new_version}) is available.\nCurrent version: {current_version}\n\nWould you like to update now?",
+        "update_downloading": "Downloading update...",
+        "update_error": "Failed to check for updates.",
+        "update_latest": "You are using the latest version.",
         "warn_delete_default": "Cannot delete 'Default' profile.",
         "confirm_delete": "Delete profile '{name}'?",
         "dlg_save_title": "Save Profile",
@@ -236,6 +251,11 @@ important moments shine brighter! \U0001f4aa</p>
         "length": "トレイル長",
         "fade_out": "フェードアウト効果",
         "quit": "終了",
+        "update_available": "アップデートのお知らせ",
+        "update_msg": "新しいバージョン({new_version})が利用可能です。\n現在のバージョン: {current_version}\n\n今すぐアップデートしますか？",
+        "update_downloading": "アップデートをダウンロード中...",
+        "update_error": "アップデート情報の取得に失敗しました。",
+        "update_latest": "最新バージョンを使用しています。",
         "warn_delete_default": "「Default」プロファイルは削除できません。",
         "confirm_delete": "プロファイル '{name}' を削除しますか？",
         "dlg_save_title": "プロファイル保存",
@@ -1185,6 +1205,11 @@ class SettingsDialog(QDialog):
         self.history_btn.setStyleSheet("background-color: #555;")
         footer_btn_layout.addWidget(self.history_btn)
         
+        self.update_btn = QPushButton("업데이트 확인")
+        self.update_btn.clicked.connect(self.check_for_updates)
+        self.update_btn.setStyleSheet("background-color: #555;")
+        footer_btn_layout.addWidget(self.update_btn)
+        
         layout.addLayout(footer_btn_layout)
         
         footer_info_layout = QVBoxLayout()
@@ -1310,6 +1335,14 @@ class SettingsDialog(QDialog):
         self.about_btn.setText(self.tr("about_btn"))
         self.history_btn.setText(self.tr("update_history"))
         
+        # update_btn text based on lang
+        btn_tr = {
+            "ko": "업데이트 확인", "en": "Check for Updates", "ja": "更新確認",
+            "zh": "检查更新", "es": "Buscar actualizaciones", "fr": "Rechercher des mises à jour",
+            "de": "Nach Updates suchen", "ru": "Проверить обновления"
+        }
+        self.update_btn.setText(btn_tr.get(self.overlay.profile_manager.language, "Check for Updates"))
+        
         # Footer
         self.dev_label.setText(self.tr("developer"))
         # Re-set HTML for link to preserve formatting if text changes
@@ -1342,6 +1375,9 @@ class SettingsDialog(QDialog):
         self.profile_combo.addItems(profiles)
         self.profile_combo.setCurrentText(self.overlay.profile_manager.current_profile)
         self.profile_combo.blockSignals(False)
+
+    def check_for_updates(self):
+        AutoUpdater.check_and_prompt(self, self.overlay.profile_manager, manual_check=True)
 
     def change_profile(self, index):
         name = self.profile_combo.currentText()
@@ -1591,6 +1627,9 @@ class TrailOverlay(QMainWindow):
         
         # Show settings on startup
         self.open_settings()
+        
+        # Check for updates in background
+        AutoUpdater.check_and_prompt(self.settings_dialog, self.profile_manager, manual_check=False)
 
     def on_tray_icon_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
