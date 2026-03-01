@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QSystemTrayIcon
                              QListWidget, QListWidgetItem, QInputDialog, QMessageBox,
                              QStyledItemDelegate, QStyle, QStyleOptionViewItem, QAbstractItemView,
                              QTextBrowser)
-from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QEvent
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QEvent, QObject, pyqtSignal
 from PyQt6.QtGui import (QAction, QIcon, QColor, QPainter, QPen, QBrush, 
                          QPolygonF, QCursor, QFont, QLinearGradient)
 
@@ -996,36 +996,68 @@ class ChangelogDialog(QDialog):
         self.close_btn.setText(texts.get("close", "Close"))
         self.browser.setHtml(texts.get("changelog", "<h2>No Changelog Available</h2>"))
 
+class UpdateSignal(QObject):
+    finished = pyqtSignal(dict)
+
 class AutoUpdater:
+    _signal = UpdateSignal()
+
+    @staticmethod
+    def _version_to_tuple(version_str):
+        try:
+            return tuple(map(int, version_str.lstrip('v').split('.')))
+        except:
+            return (0, 0, 0)
+
     @staticmethod
     def check_and_prompt(parent_widget, profile_manager, manual_check=False):
-        def _check():
+        # Local function to handle UI update after check
+        def on_check_finished(result):
+            try:
+                # Disconnect only this specific slot to be safe
+                AutoUpdater._signal.finished.disconnect(on_check_finished)
+            except:
+                pass
+            
+            if result.get("error"):
+                print(f"Update check error: {result.get('error')}")
+                if manual_check:
+                    AutoUpdater._notify_error(parent_widget, profile_manager)
+                return
+
+            latest_version = result.get("latest_version")
+            asset_url = result.get("asset_url")
+
+            print(f"Checking version: Current={APP_VERSION}, Latest={latest_version}")
+
+            if AutoUpdater._version_to_tuple(latest_version) > AutoUpdater._version_to_tuple(APP_VERSION):
+                if asset_url:
+                    AutoUpdater._prompt_update(parent_widget, profile_manager, latest_version, asset_url)
+            elif manual_check:
+                AutoUpdater._notify_latest(parent_widget, profile_manager)
+
+        AutoUpdater._signal.finished.connect(on_check_finished)
+
+        def _run():
+            result = {"latest_version": None, "asset_url": None, "error": None}
             try:
                 url = 'https://api.github.com/repos/ruruoni1/GoPoint/releases/latest'
                 req = urllib.request.Request(url, headers={'User-Agent': 'GoPoint-Updater'})
-                with urllib.request.urlopen(req, timeout=5) as response:
+                with urllib.request.urlopen(req, timeout=10) as response:
                     data = json.loads(response.read().decode())
-                    latest_version_tag = data.get('tag_name', '')
-                    latest_version = latest_version_tag.lstrip('v')
+                    latest_tag = data.get('tag_name', '')
+                    result["latest_version"] = latest_tag.lstrip('v')
                     
-                    if latest_version > APP_VERSION:
-                        asset_url = None
-                        for asset in data.get('assets', []):
-                            if asset['name'].endswith('.exe'):
-                                asset_url = asset['browser_download_url']
-                                break
-                        
-                        if asset_url:
-                            # Prompt user in main thread
-                            QTimer.singleShot(0, lambda: AutoUpdater._prompt_update(parent_widget, profile_manager, latest_version, asset_url))
-                    elif manual_check:
-                        QTimer.singleShot(0, lambda: AutoUpdater._notify_latest(parent_widget, profile_manager))
+                    for asset in data.get('assets', []):
+                        if asset['name'].endswith('.exe'):
+                            result["asset_url"] = asset['browser_download_url']
+                            break
             except Exception as e:
-                print(f"Update check failed: {e}")
-                if manual_check:
-                    QTimer.singleShot(0, lambda: AutoUpdater._notify_error(parent_widget, profile_manager))
+                result["error"] = str(e)
+            
+            AutoUpdater._signal.finished.emit(result)
                     
-        threading.Thread(target=_check, daemon=True).start()
+        threading.Thread(target=_run, daemon=True).start()
 
     @staticmethod
     def _get_tr(profile_manager, key):
@@ -1057,27 +1089,24 @@ class AutoUpdater:
 
     @staticmethod
     def _perform_update(parent_widget, profile_manager, download_url):
-        # Prevent further interaction
         if hasattr(parent_widget, 'setEnabled'):
             parent_widget.setEnabled(False)
             
         def _download():
             try:
-                import shutil
                 temp_exe = os.path.join(tempfile.gettempdir(), "GoPoint_update.exe")
                 req = urllib.request.Request(download_url, headers={'User-Agent': 'GoPoint-Updater'})
-                with urllib.request.urlopen(req, timeout=30) as response, open(temp_exe, 'wb') as out_file:
+                with urllib.request.urlopen(req, timeout=60) as response, open(temp_exe, 'wb') as out_file:
                     shutil.copyfileobj(response, out_file)
                 
-                # Create bat script to replace running exe
                 current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
                 if not getattr(sys, 'frozen', False):
-                    print("Update downloaded to temp, but running in dev mode. Skipping replace.")
+                    print("Update mode disabled for non-frozen app.")
                     return
                 
                 bat_path = os.path.join(tempfile.gettempdir(), "update_gopoint.bat")
                 bat_content = f'''@echo off
-echo Updating GoPoint...
+echo Updating GoPoint to {APP_VERSION}...
 ping 127.0.0.1 -n 3 > nul
 move /y "{temp_exe}" "{current_exe}"
 start "" "{current_exe}"
@@ -1086,12 +1115,11 @@ del "%~f0"
                 with open(bat_path, 'w', encoding='utf-8') as f:
                     f.write(bat_content)
                 
-                # Execute bat and quit
                 subprocess.Popen(bat_path, shell=True)
-                QTimer.singleShot(0, QApplication.instance().quit)
+                QApplication.quit()
                 
             except Exception as e:
-                print(f"Update download failed: {e}")
+                print(f"Download error: {e}")
                 QTimer.singleShot(0, lambda: AutoUpdater._notify_error(parent_widget, profile_manager))
                 if hasattr(parent_widget, 'setEnabled'):
                     QTimer.singleShot(0, lambda: parent_widget.setEnabled(True))
