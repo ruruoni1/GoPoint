@@ -36,7 +36,7 @@ import threading
 import tempfile
 import subprocess
 
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 
 
 TRANSLATIONS = {
@@ -95,7 +95,13 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.7 (2026-03-01)</h2>
+        "changelog": """<h2>Ver 1.0.8 (2026-03-01)</h2>
+<ul>
+<li><b>업데이트 방식 혁신 (Rename-and-Replace):</b> Windows의 파일 잠금을 우회하는 보존 및 교체 방식을 도입하여, 업데이트 시 발생하던 DLL 오류와 권한 문제를 근본적으로 해결했습니다.</li>
+<li><b>자동 찌꺼기 청소:</b> 업데이트 후 남은 이전 버전 파일(.old)을 앱 시작 시 자동으로 정리합니다.</li>
+</ul>
+
+<h2>Ver 1.0.7 (2026-03-01)</h2>
 <ul>
 <li><b>자동 업데이트 기능 도입:</b> 새로운 버전 출시 시 앱 내에서 즉시 확인하고 업데이트 가능</li>
 <li>트레이 메뉴 및 설정 하단에 '업데이트 확인' 버튼 추가</li>
@@ -196,7 +202,13 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.7 (2026-03-01)</h2>
+        "changelog": """<h2>Ver 1.0.8 (2026-03-01)</h2>
+<ul>
+<li><b>Improved Update Strategy (Rename-and-Replace):</b> Introduced a robust mechanism to bypass file lock issues on Windows, eliminating DLL and permission errors during updates.</li>
+<li><b>Automated Cleanup:</b> Temporary update files are now automatically cleaned up on startup.</li>
+</ul>
+
+<h2>Ver 1.0.7 (2026-03-01)</h2>
 <ul>
 <li><b>Auto-Updater:</b> Check for and install new versions directly within the app.</li>
 <li>Added 'Check for Updates' button in tray menu and settings.</li>
@@ -1015,6 +1027,18 @@ class AutoUpdater:
     _signal = UpdateSignal()
 
     @staticmethod
+    def cleanup():
+        """ Remove leftover .old files from previous updates """
+        try:
+            if getattr(sys, 'frozen', False):
+                current_exe = sys.executable
+                old_exe = current_exe + ".old"
+                if os.path.exists(old_exe):
+                    os.remove(old_exe)
+        except Exception as e:
+            print(f"Cleanup failed: {e}")
+
+    @staticmethod
     def _version_to_tuple(version_str):
         try:
             return tuple(map(int, version_str.lstrip('v').split('.')))
@@ -1106,29 +1130,34 @@ class AutoUpdater:
             
         def _download():
             try:
-                temp_exe = os.path.join(tempfile.gettempdir(), "GoPoint_update.exe")
-                req = urllib.request.Request(download_url, headers={'User-Agent': 'GoPoint-Updater'})
-                with urllib.request.urlopen(req, timeout=60) as response, open(temp_exe, 'wb') as out_file:
-                    shutil.copyfileobj(response, out_file)
-                
-                current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
-                if not getattr(sys, 'frozen', False):
+                current_exe = sys.executable if getattr(sys, 'frozen', False) else None
+                if not current_exe:
                     print("Update mode disabled for non-frozen app.")
                     return
+
+                old_exe = current_exe + ".old"
                 
-                bat_path = os.path.join(tempfile.gettempdir(), "update_gopoint.bat")
-                bat_content = f'''@echo off
-echo Updating GoPoint to {APP_VERSION}...
-ping 127.0.0.1 -n 3 > nul
-move /y "{temp_exe}" "{current_exe}"
-start "" "{current_exe}"
-del "%~f0"
-'''
-                with open(bat_path, 'w', encoding='utf-8') as f:
-                    f.write(bat_content)
+                # 1. Rename current running exe to .old (Windows allows this!)
+                if os.path.exists(old_exe):
+                    os.remove(old_exe)
+                os.rename(current_exe, old_exe)
                 
-                subprocess.Popen(bat_path, shell=True)
-                QApplication.quit()
+                try:
+                    # 2. Download new EXE to the original path
+                    req = urllib.request.Request(download_url, headers={'User-Agent': 'GoPoint-Updater'})
+                    with urllib.request.urlopen(req, timeout=120) as response, open(current_exe, 'wb') as out_file:
+                        shutil.copyfileobj(response, out_file)
+                    
+                    # 3. Start the NEW exe
+                    subprocess.Popen([current_exe], shell=False)
+                    # 4. Quit this old one
+                    QApplication.quit()
+                except Exception as e:
+                    # Rollback if download fails
+                    if os.path.exists(old_exe):
+                        if os.path.exists(current_exe): os.remove(current_exe)
+                        os.rename(old_exe, current_exe)
+                    raise e
                 
             except Exception as e:
                 print(f"Download error: {e}")
@@ -1882,6 +1911,9 @@ if __name__ == "__main__":
     
     # Ensure the overlay covers the whole virtual desktop if multiple monitors
     # For now, just primary screen logic is in __init__, can be expanded.
+    
+    # Cleanup old update files
+    AutoUpdater.cleanup()
     
     overlay = TrailOverlay()
     overlay.show()
