@@ -36,7 +36,7 @@ import threading
 import tempfile
 import subprocess
 
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 
 
 TRANSLATIONS = {
@@ -95,7 +95,13 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.6</h2>
+        "changelog": """<h2>Ver 1.0.7 (2026-03-01)</h2>
+<ul>
+<li><b>자동 업데이트 기능 도입:</b> 새로운 버전 출시 시 앱 내에서 즉시 확인하고 업데이트 가능</li>
+<li>트레이 메뉴 및 설정 하단에 '업데이트 확인' 버튼 추가</li>
+</ul>
+
+<h2>Ver 1.0.6 (2026-03-01)</h2>
 <ul>
 <li>마우스 커서 트래킹 알고리즘 개선 (물리 스프링 효과 적용으로 샘플처럼 완벽히 부드러운 꼬리 구현)</li>
 </ul>
@@ -190,7 +196,13 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.6</h2>
+        "changelog": """<h2>Ver 1.0.7 (2026-03-01)</h2>
+<ul>
+<li><b>Auto-Updater:</b> Check for and install new versions directly within the app.</li>
+<li>Added 'Check for Updates' button in tray menu and settings.</li>
+</ul>
+
+<h2>Ver 1.0.6 (2026-03-01)</h2>
 <ul>
 <li>Improved Mouse Cursor Tracking (Applied spring physics for perfectly smooth, continuous trails like the preview animation)</li>
 </ul>
