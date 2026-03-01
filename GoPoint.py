@@ -1055,6 +1055,16 @@ class AutoUpdater:
             except:
                 pass
             
+            # Log for debugging loop
+            try:
+                log_path = os.path.join(tempfile.gettempdir(), "gopoint_debug.log")
+                with open(log_path, "a", encoding="utf-8") as f:
+                    import time
+                    t_str = time.strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"[{t_str}] Check finished. Current={APP_VERSION}, Latest={result.get('latest_version')}\n")
+            except:
+                pass
+
             if result.get("error"):
                 print(f"Update check error: {result.get('error')}")
                 if manual_check:
@@ -1077,8 +1087,14 @@ class AutoUpdater:
         def _run():
             result = {"latest_version": None, "asset_url": None, "error": None}
             try:
-                url = 'https://api.github.com/repos/ruruoni1/GoPoint/releases/latest'
-                req = urllib.request.Request(url, headers={'User-Agent': 'GoPoint-Updater'})
+                import time
+                # Bypass GitHub API cache
+                url = f'https://api.github.com/repos/ruruoni1/GoPoint/releases/latest?t={int(time.time())}'
+                req = urllib.request.Request(url, headers={
+                    'User-Agent': 'GoPoint-Updater',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                })
                 with urllib.request.urlopen(req, timeout=10) as response:
                     data = json.loads(response.read().decode())
                     latest_tag = data.get('tag_name', '')
@@ -1086,7 +1102,9 @@ class AutoUpdater:
                     
                     for asset in data.get('assets', []):
                         if asset['name'].endswith('.exe'):
-                            result["asset_url"] = asset['browser_download_url']
+                            # Bypass CDN cache if possible
+                            base_url = asset['browser_download_url']
+                            result["asset_url"] = f"{base_url}?t={int(time.time())}"
                             break
             except Exception as e:
                 result["error"] = str(e)
@@ -1144,7 +1162,12 @@ class AutoUpdater:
                 
                 try:
                     # 2. Download new EXE to the original path
-                    req = urllib.request.Request(download_url, headers={'User-Agent': 'GoPoint-Updater'})
+                    # Note: download_url already has timestamp from _run
+                    req = urllib.request.Request(download_url, headers={
+                        'User-Agent': 'GoPoint-Updater',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache'
+                    })
                     with urllib.request.urlopen(req, timeout=120) as response, open(current_exe, 'wb') as out_file:
                         shutil.copyfileobj(response, out_file)
                     
