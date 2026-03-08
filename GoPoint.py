@@ -37,7 +37,7 @@ import tempfile
 import subprocess
 import uuid
 
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 
 
 TRANSLATIONS = {
@@ -96,7 +96,12 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.9 (2026-03-08)</h2>
+        "changelog": """<h2>Ver 1.0.10 (2026-03-08)</h2>
+<ul>
+<li><b>혜성 머리 모양 개선:</b> Tapered 스타일의 시작 부분이 잘려 보이지 않도록 원형 헤드로 마감해 더 자연스럽게 보이도록 조정했습니다.</li>
+</ul>
+
+<h2>Ver 1.0.9 (2026-03-08)</h2>
 <ul>
 <li><b>자동 업데이트 안정성 개선:</b> 시작 시 자동 확인과 수동 확인이 겹쳐도 결과가 섞이지 않도록 업데이트 요청 흐름을 정리했습니다.</li>
 <li><b>업데이트 완료 처리 보강:</b> 새 실행 파일 교체 후 재실행과 종료 순서를 안정화해 업데이트가 중간에 멈추는 문제를 줄였습니다.</li>
@@ -210,7 +215,12 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.9 (2026-03-08)</h2>
+        "changelog": """<h2>Ver 1.0.10 (2026-03-08)</h2>
+<ul>
+<li><b>Round comet head:</b> Refined the Tapered style so the leading edge is rounded instead of looking clipped.</li>
+</ul>
+
+<h2>Ver 1.0.9 (2026-03-08)</h2>
 <ul>
 <li><b>Auto-update stability:</b> Serialized update checks so startup checks and manual checks no longer race or show mixed results.</li>
 <li><b>Safer update completion:</b> Stabilized the restart-and-exit sequence after replacing the executable so updates finish cleanly.</li>
@@ -495,7 +505,12 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.9 (2026-03-08)</h2>
+        "changelog": """<h2>Ver 1.0.10 (2026-03-08)</h2>
+<ul>
+<li><b>Runder Kometenkopf:</b> Der Anfang der Tapered-Spur wird jetzt mit einem runden Kopf abgeschlossen und wirkt dadurch natürlicher.</li>
+</ul>
+
+<h2>Ver 1.0.9 (2026-03-08)</h2>
 <ul>
 <li><b>Stabileres Auto-Update:</b> Gleichzeitige automatische und manuelle Update-Prüfungen werden jetzt sauber nacheinander verarbeitet.</li>
 <li><b>Zuverlässiger Abschluss des Updates:</b> Neustart und Beenden nach dem Ersetzen der EXE wurden robuster gemacht.</li>
@@ -782,6 +797,9 @@ def draw_trail(painter, history, style, colors, width_factor, length, opacity_de
         painter.setOpacity(0.8 if opacity_decay else 1.0)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawPath(path)
+        # Cover the blunt polygon edge so the comet head reads as a circle.
+        head_radius = width_factor / 2.0
+        painter.drawEllipse(QPointF(points[0]), head_radius, head_radius)
 
 class PreviewWidget(QWidget):
     def __init__(self, parent=None):
