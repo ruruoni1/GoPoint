@@ -37,7 +37,8 @@ import tempfile
 import subprocess
 import uuid
 
-APP_VERSION = "1.0.11"
+APP_VERSION = "1.0.12"
+RELEASE_ASSET_NAME = "GoPoint.exe"
 
 
 TRANSLATIONS = {
@@ -96,7 +97,13 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.11 (2026-03-09)</h2>
+        "changelog": """<h2>Ver 1.0.12 (2026-03-09)</h2>
+<ul>
+<li><b>업데이트 자산 검증 강화:</b> 자동 업데이트가 GitHub 릴리즈의 임의 EXE가 아니라 <code>GoPoint.exe</code> 자산만 선택하도록 제한했습니다.</li>
+<li><b>시작 프로그램 경로 안전성 개선:</b> Windows 시작 프로그램 레지스트리에 실행 경로를 따옴표로 저장해 공백 경로 해석 문제를 줄였습니다.</li>
+</ul>
+
+<h2>Ver 1.0.11 (2026-03-09)</h2>
 <ul>
 <li><b>C++ 단일 파일 배포 전환:</b> 배포용 실행 파일을 Nuitka 기반 단일 EXE로 전환하여, 1.0.10 사용자가 자동 업데이트로 그대로 전환될 수 있도록 준비했습니다.</li>
 <li><b>릴리즈 파일명 정리:</b> GitHub 릴리즈 자산은 항상 <code>GoPoint.exe</code>로 제공하고, 로컬 빌드 산출물은 버전명 파일도 함께 생성하도록 정리했습니다.</li>
@@ -221,7 +228,13 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.11 (2026-03-09)</h2>
+        "changelog": """<h2>Ver 1.0.12 (2026-03-09)</h2>
+<ul>
+<li><b>Safer update asset selection:</b> Auto-update now accepts only the <code>GoPoint.exe</code> release asset instead of the first EXE it finds.</li>
+<li><b>Quoted startup path:</b> The Windows startup registry entry now stores the executable path with quotes to avoid path parsing issues.</li>
+</ul>
+
+<h2>Ver 1.0.11 (2026-03-09)</h2>
 <ul>
 <li><b>C++ single-file distribution:</b> Switched the release build to a Nuitka-generated single EXE so 1.0.10 users can migrate through the existing auto-updater.</li>
 <li><b>Stable release asset naming:</b> GitHub releases now ship <code>GoPoint.exe</code> consistently, while local builds also keep a versioned copy.</li>
@@ -517,7 +530,13 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.11 (2026-03-09)</h2>
+        "changelog": """<h2>Ver 1.0.12 (2026-03-09)</h2>
+<ul>
+<li><b>Sicherere Auswahl des Update-Assets:</b> Das Auto-Update akzeptiert jetzt nur noch das Release-Asset <code>GoPoint.exe</code> statt irgendeiner EXE-Datei.</li>
+<li><b>Startpfad mit Anfuehrungszeichen:</b> Der Autostart-Registrywert speichert den EXE-Pfad jetzt in Anfuehrungszeichen, um Fehlinterpretationen bei Leerzeichen zu vermeiden.</li>
+</ul>
+
+<h2>Ver 1.0.11 (2026-03-09)</h2>
 <ul>
 <li><b>C++-Einzeldatei fuer die Auslieferung:</b> Der Release-Build wird jetzt als mit Nuitka erzeugte Einzel-EXE erstellt, sodass bestehende 1.0.10-Installationen per Auto-Update wechseln koennen.</li>
 <li><b>Einheitlicher Release-Dateiname:</b> GitHub-Releases liefern jetzt immer <code>GoPoint.exe</code> aus; lokale Builds erzeugen zusaetzlich eine versionierte Kopie.</li>
@@ -1188,11 +1207,14 @@ class AutoUpdater:
                     result["latest_version"] = latest_tag.lstrip('v')
                     
                     for asset in data.get('assets', []):
-                        if asset['name'].endswith('.exe'):
+                        if asset.get('name') == RELEASE_ASSET_NAME:
                             # Bypass CDN cache if possible
                             base_url = asset['browser_download_url']
                             result["asset_url"] = f"{base_url}?t={int(time.time())}"
                             break
+
+                    if result["latest_version"] and not result["asset_url"]:
+                        result["error"] = f"Release asset '{RELEASE_ASSET_NAME}' was not found."
             except Exception as e:
                 result["error"] = str(e)
             
@@ -1578,7 +1600,7 @@ class SettingsDialog(QDialog):
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
             if state == 2: # Checked
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"')
             else: # Unchecked
                 try:
                     winreg.DeleteValue(key, app_name)

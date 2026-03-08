@@ -13,10 +13,10 @@
 
 ---
 
-## 🆕 v1.0.11 업데이트
+## 🆕 v1.0.12 업데이트
 
-* 배포 빌드를 Nuitka 기반 **C++ 단일 EXE**로 전환해 `1.0.10` 사용자도 기존 자동 업데이트로 그대로 전환될 수 있게 준비했습니다.
-* GitHub 릴리즈 자산은 계속 `GoPoint.exe`로 제공하고, 로컬 빌드는 버전 표기 파일도 함께 생성합니다.
+* 자동 업데이트가 GitHub 릴리즈의 임의 EXE가 아니라 `GoPoint.exe` 자산만 받도록 고정했습니다.
+* Windows 시작 프로그램 등록 경로를 따옴표로 저장해 공백 경로 해석 문제를 줄였습니다.
 * 최신 배포 파일: **[GoPoint.exe](https://github.com/ruruoni1/GoPoint/releases/latest)**
 
 <br>
