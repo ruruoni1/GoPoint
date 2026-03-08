@@ -17,7 +17,7 @@
 
 * `혜성 (Tapered)` 스타일의 시작 부분을 원형 헤드로 다듬어 더 자연스럽게 보이도록 수정했습니다.
 * 이전 릴리즈의 자동 업데이트 안정화와 프로필 보존 수정도 그대로 포함되어 있습니다.
-* 최신 배포 파일: **[GoPoint_v1.0.10.exe](https://github.com/ruruoni1/GoPoint/releases/latest)**
+* 최신 배포 파일: **[GoPoint.exe](https://github.com/ruruoni1/GoPoint/releases/latest)**
 
 <br>
 
@@ -40,7 +40,7 @@
 파이썬이나 복잡한 환경 설정 없이, **클릭 한 번으로 실행되는 단일 파일**로 제공됩니다.
 
 1. 우측 메뉴 또는 아래 링크를 통해 **[최신 릴리스(Releases)](https://github.com/ruruoni1/GoPoint/releases/latest)** 페이지로 이동합니다.
-2. `GoPoint_v1.0.10.exe` (가장 최신 버전) 파일을 다운로드합니다.
+2. `GoPoint.exe` (가장 최신 버전) 파일을 다운로드합니다.
 3. 다운로드 받은 파일을 **더블 클릭하여 실행**합니다! 
 4. 작업 표시줄 우측 (시계 옆) **시스템 트레이 숨겨진 아이콘**에 하늘색 동그라미 아이콘이 생기면 성공적으로 실행된 것입니다. 아이콘을 마우스 왼쪽 버튼으로 클릭하여 설정창을 열어 꾸며보세요.
 
