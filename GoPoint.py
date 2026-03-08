@@ -35,8 +35,9 @@ import urllib.error
 import threading
 import tempfile
 import subprocess
+import uuid
 
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.0.9"
 
 
 TRANSLATIONS = {
@@ -95,7 +96,14 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.8 (2026-03-01)</h2>
+        "changelog": """<h2>Ver 1.0.9 (2026-03-08)</h2>
+<ul>
+<li><b>자동 업데이트 안정성 개선:</b> 시작 시 자동 확인과 수동 확인이 겹쳐도 결과가 섞이지 않도록 업데이트 요청 흐름을 정리했습니다.</li>
+<li><b>업데이트 완료 처리 보강:</b> 새 실행 파일 교체 후 재실행과 종료 순서를 안정화해 업데이트가 중간에 멈추는 문제를 줄였습니다.</li>
+<li><b>설정 보존 개선:</b> 사용자가 수정한 Default 프로필이 재시작 시 기본값으로 덮어써지지 않도록 수정했습니다.</li>
+</ul>
+
+<h2>Ver 1.0.8 (2026-03-01)</h2>
 <ul>
 <li><b>업데이트 방식 혁신 (Rename-and-Replace):</b> Windows의 파일 잠금을 우회하는 보존 및 교체 방식을 도입하여, 업데이트 시 발생하던 DLL 오류와 권한 문제를 근본적으로 해결했습니다.</li>
 <li><b>자동 찌꺼기 청소:</b> 업데이트 후 남은 이전 버전 파일(.old)을 앱 시작 시 자동으로 정리합니다.</li>
@@ -202,7 +210,14 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.8 (2026-03-01)</h2>
+        "changelog": """<h2>Ver 1.0.9 (2026-03-08)</h2>
+<ul>
+<li><b>Auto-update stability:</b> Serialized update checks so startup checks and manual checks no longer race or show mixed results.</li>
+<li><b>Safer update completion:</b> Stabilized the restart-and-exit sequence after replacing the executable so updates finish cleanly.</li>
+<li><b>Profile persistence fix:</b> Prevented customized Default profiles from being overwritten on the next launch.</li>
+</ul>
+
+<h2>Ver 1.0.8 (2026-03-01)</h2>
 <ul>
 <li><b>Improved Update Strategy (Rename-and-Replace):</b> Introduced a robust mechanism to bypass file lock issues on Windows, eliminating DLL and permission errors during updates.</li>
 <li><b>Automated Cleanup:</b> Temporary update files are now automatically cleaned up on startup.</li>
@@ -480,7 +495,14 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.6</h2>
+        "changelog": """<h2>Ver 1.0.9 (2026-03-08)</h2>
+<ul>
+<li><b>Stabileres Auto-Update:</b> Gleichzeitige automatische und manuelle Update-Prüfungen werden jetzt sauber nacheinander verarbeitet.</li>
+<li><b>Zuverlässiger Abschluss des Updates:</b> Neustart und Beenden nach dem Ersetzen der EXE wurden robuster gemacht.</li>
+<li><b>Profilspeicherung korrigiert:</b> Angepasste Default-Profile werden beim nächsten Start nicht mehr überschrieben.</li>
+</ul>
+
+<h2>Ver 1.0.6</h2>
 <ul>
 <li>Verbessertes Mauszeiger-Tracking (Anwendung von Federphysik für perfekt weiche und kontinuierliche Spuren, analog zur Vorschau-Animation)</li>
 </ul>
@@ -844,6 +866,13 @@ class ProfileManager:
     }
     
     FIRE_COLORS = ["#FFFF00", "#FFA500", "#FF0000"]
+    LEGACY_DEFAULT_PROFILE = {
+        "style": "CONSTANT",
+        "colors": ["#00FFFF"],
+        "width": 12,
+        "length": 20,
+        "opacity_decay": True
+    }
     
     def __init__(self, filename="profiles.json"):
         # Relocate to AppData/Roaming/MouseTrailOverlay
@@ -904,7 +933,7 @@ class ProfileManager:
     def init_sample_profiles(self):
         updated = False
         
-        # Force update Default to match Fire (explicitly)
+        # Preserve user-customized Default profiles and only migrate the legacy cyan default.
         fire_settings = {
             "style": "CONSTANT",
             "colors": self.FIRE_COLORS,
@@ -912,8 +941,8 @@ class ProfileManager:
             "length": 20,
             "opacity_decay": True
         }
-        if self.profiles.get("Default") != fire_settings:
-            # Check if it was the old single cyan default, or just ensure it matches fire
+        current_default = self.profiles.get("Default")
+        if current_default is None or current_default == self.LEGACY_DEFAULT_PROFILE:
             self.profiles["Default"] = fire_settings
             updated = True
 
@@ -966,15 +995,19 @@ class ProfileManager:
 
     def detect_system_language(self):
         try:
-            sys_lang, _ = locale.getdefaultlocale()
+            sys_lang, _ = locale.getlocale()
+            if not sys_lang:
+                sys_lang = locale.setlocale(locale.LC_CTYPE, None)
+
             if sys_lang:
-                if sys_lang.startswith('ko'): return 'ko'
-                if sys_lang.startswith('ja'): return 'ja'
-                if sys_lang.startswith('es'): return 'es'
-                if sys_lang.startswith('zh'): return 'zh'
-                if sys_lang.startswith('fr'): return 'fr'
-                if sys_lang.startswith('de'): return 'de'
-                if sys_lang.startswith('ru'): return 'ru'
+                sys_lang = sys_lang.lower()
+                if sys_lang.startswith(('ko', 'korean')): return 'ko'
+                if sys_lang.startswith(('ja', 'japanese')): return 'ja'
+                if sys_lang.startswith(('es', 'spanish')): return 'es'
+                if sys_lang.startswith(('zh', 'chinese')): return 'zh'
+                if sys_lang.startswith(('fr', 'french')): return 'fr'
+                if sys_lang.startswith(('de', 'german')): return 'de'
+                if sys_lang.startswith(('ru', 'russian')): return 'ru'
             return 'en' # Default fallback
         except:
             return 'en'
@@ -1021,10 +1054,14 @@ class ChangelogDialog(QDialog):
         self.browser.setHtml(texts.get("changelog", "<h2>No Changelog Available</h2>"))
 
 class UpdateSignal(QObject):
-    finished = pyqtSignal(dict)
+    finished = pyqtSignal(str, dict)
+    download_finished = pyqtSignal(str, dict)
 
 class AutoUpdater:
     _signal = UpdateSignal()
+    _check_in_progress = False
+    _pending_manual_check = False
+    _download_in_progress = False
 
     @staticmethod
     def cleanup():
@@ -1047,13 +1084,27 @@ class AutoUpdater:
 
     @staticmethod
     def check_and_prompt(parent_widget, profile_manager, manual_check=False):
+        if AutoUpdater._check_in_progress:
+            AutoUpdater._pending_manual_check = AutoUpdater._pending_manual_check or manual_check
+            return
+
+        AutoUpdater._check_in_progress = True
+        request_id = uuid.uuid4().hex
+
         # Local function to handle UI update after check
-        def on_check_finished(result):
+        def on_check_finished(emitted_request_id, result):
+            if emitted_request_id != request_id:
+                return
+
             try:
                 # Disconnect only this specific slot to be safe
                 AutoUpdater._signal.finished.disconnect(on_check_finished)
             except:
                 pass
+
+            effective_manual_check = manual_check or AutoUpdater._pending_manual_check
+            AutoUpdater._check_in_progress = False
+            AutoUpdater._pending_manual_check = False
             
             # Log for debugging loop
             try:
@@ -1067,7 +1118,7 @@ class AutoUpdater:
 
             if result.get("error"):
                 print(f"Update check error: {result.get('error')}")
-                if manual_check:
+                if effective_manual_check:
                     AutoUpdater._notify_error(parent_widget, profile_manager)
                 return
 
@@ -1079,7 +1130,7 @@ class AutoUpdater:
             if AutoUpdater._version_to_tuple(latest_version) > AutoUpdater._version_to_tuple(APP_VERSION):
                 if asset_url:
                     AutoUpdater._prompt_update(parent_widget, profile_manager, latest_version, asset_url)
-            elif manual_check:
+            elif effective_manual_check:
                 AutoUpdater._notify_latest(parent_widget, profile_manager)
 
         AutoUpdater._signal.finished.connect(on_check_finished)
@@ -1109,14 +1160,15 @@ class AutoUpdater:
             except Exception as e:
                 result["error"] = str(e)
             
-            AutoUpdater._signal.finished.emit(result)
+            AutoUpdater._signal.finished.emit(request_id, result)
                     
         threading.Thread(target=_run, daemon=True).start()
 
     @staticmethod
     def _get_tr(profile_manager, key):
         lang = profile_manager.language
-        return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+        translations = TRANSLATIONS.get(lang, TRANSLATIONS["en"])
+        return translations.get(key, TRANSLATIONS["en"].get(key, key))
 
     @staticmethod
     def _notify_latest(parent_widget, profile_manager):
@@ -1125,10 +1177,10 @@ class AutoUpdater:
                                 AutoUpdater._get_tr(profile_manager, "update_latest"))
                                 
     @staticmethod
-    def _notify_error(parent_widget, profile_manager):
+    def _notify_error(parent_widget, profile_manager, message=None):
         QMessageBox.warning(parent_widget, 
                             AutoUpdater._get_tr(profile_manager, "update_available"), 
-                            AutoUpdater._get_tr(profile_manager, "update_error"))
+                            message or AutoUpdater._get_tr(profile_manager, "update_error"))
 
     @staticmethod
     def _prompt_update(parent_widget, profile_manager, new_version, download_url):
@@ -1142,15 +1194,48 @@ class AutoUpdater:
             AutoUpdater._perform_update(parent_widget, profile_manager, download_url)
 
     @staticmethod
+    def _handle_download_result(parent_widget, profile_manager, result):
+        if result.get("error"):
+            print(f"Download error: {result.get('error')}")
+            AutoUpdater._notify_error(parent_widget, profile_manager, result.get("error"))
+            if hasattr(parent_widget, 'setEnabled'):
+                parent_widget.setEnabled(True)
+            return
+
+        threading.Timer(0.3, lambda: os._exit(0)).start()
+        QApplication.quit()
+
+    @staticmethod
     def _perform_update(parent_widget, profile_manager, download_url):
-        if hasattr(parent_widget, 'setEnabled'):
+        if AutoUpdater._download_in_progress:
+            return
+
+        AutoUpdater._download_in_progress = True
+        request_id = uuid.uuid4().hex
+
+        def on_download_finished(emitted_request_id, result):
+            if emitted_request_id != request_id:
+                return
+
+            try:
+                AutoUpdater._signal.download_finished.disconnect(on_download_finished)
+            except:
+                pass
+
+            AutoUpdater._download_in_progress = False
+            AutoUpdater._handle_download_result(parent_widget, profile_manager, result)
+
+        AutoUpdater._signal.download_finished.connect(on_download_finished)
+
+        if getattr(sys, 'frozen', False) and hasattr(parent_widget, 'setEnabled'):
             parent_widget.setEnabled(False)
-            
+             
         def _download():
+            result = {"error": None}
             try:
                 current_exe = sys.executable if getattr(sys, 'frozen', False) else None
                 if not current_exe:
-                    print("Update mode disabled for non-frozen app.")
+                    result["error"] = "Auto-update is only supported in the packaged .exe build."
                     return
 
                 old_exe = current_exe + ".old"
@@ -1173,23 +1258,18 @@ class AutoUpdater:
                     
                     # 3. Start the NEW exe
                     subprocess.Popen([current_exe], shell=False)
-                    # 4. Quit this old one (ensure it's on the main thread)
-                    QTimer.singleShot(0, lambda: QApplication.quit())
-                    # Hard exit after a short delay to allow the new process to settle
-                    QTimer.singleShot(100, lambda: os._exit(0))
                 except Exception as e:
                     # Rollback if download fails
                     if os.path.exists(old_exe):
                         if os.path.exists(current_exe): os.remove(current_exe)
                         os.rename(old_exe, current_exe)
                     raise e
-                
+                 
             except Exception as e:
-                print(f"Download error: {e}")
-                QTimer.singleShot(0, lambda: AutoUpdater._notify_error(parent_widget, profile_manager))
-                if hasattr(parent_widget, 'setEnabled'):
-                    QTimer.singleShot(0, lambda: parent_widget.setEnabled(True))
-                    
+                result["error"] = str(e)
+            finally:
+                AutoUpdater._signal.download_finished.emit(request_id, result)
+                     
         threading.Thread(target=_download, daemon=True).start()
 
 class SettingsDialog(QDialog):
