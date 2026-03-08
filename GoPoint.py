@@ -37,7 +37,7 @@ import tempfile
 import subprocess
 import uuid
 
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 
 
 TRANSLATIONS = {
@@ -96,7 +96,13 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.10 (2026-03-08)</h2>
+        "changelog": """<h2>Ver 1.0.11 (2026-03-09)</h2>
+<ul>
+<li><b>C++ 단일 파일 배포 전환:</b> 배포용 실행 파일을 Nuitka 기반 단일 EXE로 전환하여, 1.0.10 사용자가 자동 업데이트로 그대로 전환될 수 있도록 준비했습니다.</li>
+<li><b>릴리즈 파일명 정리:</b> GitHub 릴리즈 자산은 항상 <code>GoPoint.exe</code>로 제공하고, 로컬 빌드 산출물은 버전명 파일도 함께 생성하도록 정리했습니다.</li>
+</ul>
+
+<h2>Ver 1.0.10 (2026-03-08)</h2>
 <ul>
 <li><b>혜성 머리 모양 개선:</b> Tapered 스타일의 시작 부분이 잘려 보이지 않도록 원형 헤드로 마감해 더 자연스럽게 보이도록 조정했습니다.</li>
 </ul>
@@ -215,7 +221,13 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.10 (2026-03-08)</h2>
+        "changelog": """<h2>Ver 1.0.11 (2026-03-09)</h2>
+<ul>
+<li><b>C++ single-file distribution:</b> Switched the release build to a Nuitka-generated single EXE so 1.0.10 users can migrate through the existing auto-updater.</li>
+<li><b>Stable release asset naming:</b> GitHub releases now ship <code>GoPoint.exe</code> consistently, while local builds also keep a versioned copy.</li>
+</ul>
+
+<h2>Ver 1.0.10 (2026-03-08)</h2>
 <ul>
 <li><b>Round comet head:</b> Refined the Tapered style so the leading edge is rounded instead of looking clipped.</li>
 </ul>
@@ -505,7 +517,13 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.10 (2026-03-08)</h2>
+        "changelog": """<h2>Ver 1.0.11 (2026-03-09)</h2>
+<ul>
+<li><b>C++-Einzeldatei fuer die Auslieferung:</b> Der Release-Build wird jetzt als mit Nuitka erzeugte Einzel-EXE erstellt, sodass bestehende 1.0.10-Installationen per Auto-Update wechseln koennen.</li>
+<li><b>Einheitlicher Release-Dateiname:</b> GitHub-Releases liefern jetzt immer <code>GoPoint.exe</code> aus; lokale Builds erzeugen zusaetzlich eine versionierte Kopie.</li>
+</ul>
+
+<h2>Ver 1.0.10 (2026-03-08)</h2>
 <ul>
 <li><b>Runder Kometenkopf:</b> Der Anfang der Tapered-Spur wird jetzt mit einem runden Kopf abgeschlossen und wirkt dadurch natürlicher.</li>
 </ul>

@@ -13,10 +13,10 @@
 
 ---
 
-## 🆕 v1.0.10 업데이트
+## 🆕 v1.0.11 업데이트
 
-* `혜성 (Tapered)` 스타일의 시작 부분을 원형 헤드로 다듬어 더 자연스럽게 보이도록 수정했습니다.
-* 이전 릴리즈의 자동 업데이트 안정화와 프로필 보존 수정도 그대로 포함되어 있습니다.
+* 배포 빌드를 Nuitka 기반 **C++ 단일 EXE**로 전환해 `1.0.10` 사용자도 기존 자동 업데이트로 그대로 전환될 수 있게 준비했습니다.
+* GitHub 릴리즈 자산은 계속 `GoPoint.exe`로 제공하고, 로컬 빌드는 버전 표기 파일도 함께 생성합니다.
 * 최신 배포 파일: **[GoPoint.exe](https://github.com/ruruoni1/GoPoint/releases/latest)**
 
 <br>
@@ -67,10 +67,10 @@ python GoPoint.py
 ```
 
 ### 단일 실행 파일(.exe) 빌드
-[PyInstaller](https://pyinstaller.org/)를 사용하여 빌드합니다.
+[Nuitka](https://nuitka.net/)를 사용하여 C++ 기반 단일 EXE를 빌드합니다.
 ```bash
-pip install pyinstaller
-pyinstaller --noconfirm --onefile --windowed --icon=icon.png --add-data "icon.png;." GoPoint.py
+pip install nuitka zstandard ordered-set
+build_nuitka.bat
 ```
 
 <br>
