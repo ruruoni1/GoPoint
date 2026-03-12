@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QSystemTrayIcon
                              QListWidget, QListWidgetItem, QInputDialog, QMessageBox,
                              QStyledItemDelegate, QStyle, QStyleOptionViewItem, QAbstractItemView,
                              QTextBrowser)
-from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QEvent, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QEvent, QObject, pyqtSignal, QPointF, QRect
 from PyQt6.QtGui import (QAction, QIcon, QColor, QPainter, QPen, QBrush, 
                          QPolygonF, QCursor, QFont, QLinearGradient)
 
@@ -39,6 +39,36 @@ import uuid
 
 APP_VERSION = "1.0.12"
 RELEASE_ASSET_NAME = "GoPoint.exe"
+NORMAL_FRAME_INTERVAL_MS = 16
+NORMAL_SMOOTHING_ITERATIONS = 2
+TOPMOST_REFRESH_INTERVAL_MS = 1200
+TRAIL_SETTLE_EPSILON = 0.75
+LOW_SPEC_LEVEL_DEFAULT = 0
+LOW_SPEC_LEVEL_LEGACY_ENABLED = 2
+
+
+def clamp_low_spec_level(level):
+    try:
+        return max(0, min(3, int(level)))
+    except Exception:
+        return LOW_SPEC_LEVEL_DEFAULT
+
+
+def get_performance_preset(level, preview=False):
+    level = clamp_low_spec_level(level)
+    overlay_presets = {
+        0: {"interval_ms": NORMAL_FRAME_INTERVAL_MS, "smoothing_iterations": NORMAL_SMOOTHING_ITERATIONS},
+        1: {"interval_ms": 18, "smoothing_iterations": 2},
+        2: {"interval_ms": 22, "smoothing_iterations": 2},
+        3: {"interval_ms": 28, "smoothing_iterations": 1},
+    }
+    preview_presets = {
+        0: {"interval_ms": NORMAL_FRAME_INTERVAL_MS, "smoothing_iterations": NORMAL_SMOOTHING_ITERATIONS},
+        1: {"interval_ms": 24, "smoothing_iterations": 2},
+        2: {"interval_ms": 33, "smoothing_iterations": 1},
+        3: {"interval_ms": 45, "smoothing_iterations": 1},
+    }
+    return (preview_presets if preview else overlay_presets)[level]
 
 
 TRANSLATIONS = {
@@ -193,6 +223,7 @@ TRANSLATIONS = {
         "width": "Start Width",
         "length": "Trail Length",
         "fade_out": "Fade Out Effect",
+        "low_spec_mode": "Low-Spec Mode",
         "quit": "Quit Program",
         "update_available": "Update Available",
         "update_msg": "A new version ({new_version}) is available.\nCurrent version: {current_version}\n\nWould you like to update now?",
@@ -670,7 +701,7 @@ import win32gui
 import win32con
 import win32api
 
-def draw_trail(painter, history, style, colors, width_factor, length, opacity_decay):
+def draw_trail(painter, history, style, colors, width_factor, length, opacity_decay, smoothing_iterations=NORMAL_SMOOTHING_ITERATIONS):
     if len(history) < 2 and style != "DOTS":
         return
 
@@ -699,8 +730,8 @@ def draw_trail(painter, history, style, colors, width_factor, length, opacity_de
         return smoothed
 
     # Apply smoothing for continuous styles
-    if style in ["CONSTANT", "TAPERED"]:
-        history = smooth_points(history)
+    if style in ["CONSTANT", "TAPERED"] and smoothing_iterations > 0:
+        history = smooth_points(history, iterations=smoothing_iterations)
     
     # Helper to interpolate color
     def interpolate_color(progress, colors):
@@ -848,7 +879,8 @@ class PreviewWidget(QWidget):
         self.angle = 0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_animation)
-        self.timer.start(16)
+        self.is_running = False
+        self.low_spec_level = LOW_SPEC_LEVEL_DEFAULT
         
         # Default settings
         self.trail_style = "TAPERED"
@@ -856,14 +888,32 @@ class PreviewWidget(QWidget):
         self.trail_width = 15
         self.trail_length = 20
         self.opacity_decay = True
+        self.smoothing_iterations = NORMAL_SMOOTHING_ITERATIONS
+        self.apply_performance_mode(LOW_SPEC_LEVEL_DEFAULT)
 
-    def update_settings(self, style, colors, width, length, decay):
+    def apply_performance_mode(self, low_spec_level):
+        self.low_spec_level = clamp_low_spec_level(low_spec_level)
+        preset = get_performance_preset(self.low_spec_level, preview=True)
+        self.smoothing_iterations = preset["smoothing_iterations"]
+        self.timer.setInterval(preset["interval_ms"])
+        if self.is_running and not self.timer.isActive():
+            self.timer.start()
+
+    def set_running(self, running):
+        self.is_running = running
+        if running:
+            self.timer.start()
+        else:
+            self.timer.stop()
+
+    def update_settings(self, style, colors, width, length, decay, low_spec_level=LOW_SPEC_LEVEL_DEFAULT):
         self.trail_style = style
         self.trail_colors = colors
         self.trail_width = width
         self.trail_length = length
         self.opacity_decay = decay
         self.history = collections.deque(self.history, maxlen=length)
+        self.apply_performance_mode(low_spec_level)
 
     def update_animation(self):
         center_x = self.width() / 2
@@ -896,7 +946,16 @@ class PreviewWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        draw_trail(painter, self.history, self.trail_style, self.trail_colors, self.trail_width, self.trail_length, self.opacity_decay)
+        draw_trail(
+            painter,
+            self.history,
+            self.trail_style,
+            self.trail_colors,
+            self.trail_width,
+            self.trail_length,
+            self.opacity_decay,
+            smoothing_iterations=self.smoothing_iterations
+        )
 
 
 import shutil # For moving legacy config
@@ -957,6 +1016,7 @@ class ProfileManager:
         self.profiles = {}
         self.current_profile = "Default"
         self.language = self.detect_system_language() # Initialize language
+        self.low_spec_level = LOW_SPEC_LEVEL_DEFAULT
         self.load_profiles()
         self.init_sample_profiles() # Ensure samples exist
 
@@ -968,6 +1028,10 @@ class ProfileManager:
                     self.profiles = data.get("profiles", {})
                     self.current_profile = data.get("current", "Default")
                     self.language = data.get("language", self.detect_system_language())
+                    stored_level = data.get("low_spec_level")
+                    if stored_level is None:
+                        stored_level = LOW_SPEC_LEVEL_LEGACY_ENABLED if data.get("low_spec_mode", False) else LOW_SPEC_LEVEL_DEFAULT
+                    self.low_spec_level = clamp_low_spec_level(stored_level)
             except:
                 self.profiles = {}
         
@@ -1019,7 +1083,9 @@ class ProfileManager:
         data = {
             "profiles": self.profiles,
             "current": self.current_profile,
-            "language": self.language
+            "language": self.language,
+            "low_spec_level": self.low_spec_level,
+            "low_spec_mode": self.low_spec_level > 0
         }
         with open(self.filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
@@ -1037,6 +1103,14 @@ class ProfileManager:
     def save_profile(self, name, settings):
         self.profiles[name] = settings
         self.current_profile = name
+        self.save_profiles()
+
+    def set_low_spec_level(self, level):
+        self.low_spec_level = clamp_low_spec_level(level)
+        self.save_profiles()
+
+    def set_low_spec_mode(self, enabled):
+        self.low_spec_level = LOW_SPEC_LEVEL_LEGACY_ENABLED if enabled else LOW_SPEC_LEVEL_DEFAULT
         self.save_profiles()
 
     def delete_profile(self, name):
@@ -1497,6 +1571,15 @@ class SettingsDialog(QDialog):
         self.opacity_check.stateChanged.connect(self.update_opacity)
         layout.addWidget(self.opacity_check)
 
+        low_spec_layout = QHBoxLayout()
+        self.low_spec_check = QCheckBox()
+        self.low_spec_check.stateChanged.connect(self.update_low_spec_enabled)
+        low_spec_layout.addWidget(self.low_spec_check)
+        self.low_spec_combo = QComboBox()
+        self.low_spec_combo.currentIndexChanged.connect(self.update_low_spec_level)
+        low_spec_layout.addWidget(self.low_spec_combo)
+        layout.addLayout(low_spec_layout)
+
         # Startup Section with Apply Button
         startup_layout = QHBoxLayout()
         self.startup_check = QCheckBox(self.tr("run_startup"))
@@ -1571,6 +1654,7 @@ class SettingsDialog(QDialog):
         # Initialize UI state
         self.refresh_profile_list()
         self.refresh_color_list()
+        self.refresh_low_spec_controls()
         self.update_preview()
         
     def check_startup_registry(self):
@@ -1625,10 +1709,61 @@ class SettingsDialog(QDialog):
             event.ignore()
             self.hide()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.preview.set_running(True)
+
+    def hideEvent(self, event):
+        self.preview.set_running(False)
+        super().hideEvent(event)
+
     # --- Profile Methods ---
     def tr(self, key):
         lang = self.overlay.profile_manager.language
-        return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+        lang_table = TRANSLATIONS.get(lang, TRANSLATIONS["en"])
+        return lang_table.get(key, TRANSLATIONS["en"].get(key, key))
+
+    def low_spec_texts(self):
+        lang = self.overlay.profile_manager.language
+        if lang == "ko":
+            return {
+                "label": "저사양 모드",
+                "levels": [
+                    ("1단계 (약)", 1),
+                    ("2단계 (보통)", 2),
+                    ("3단계 (강)", 3),
+                ],
+            }
+        return {
+            "label": self.tr("low_spec_mode"),
+            "levels": [
+                ("Level 1 (Light)", 1),
+                ("Level 2 (Balanced)", 2),
+                ("Level 3 (Strong)", 3),
+            ],
+        }
+
+    def refresh_low_spec_controls(self):
+        texts = self.low_spec_texts()
+        current_level = self.overlay.low_spec_level
+        current_combo_level = self.low_spec_combo.currentData() if self.low_spec_combo.count() > 0 else 1
+        if current_combo_level in (None, 0):
+            current_combo_level = 1
+
+        self.low_spec_check.blockSignals(True)
+        self.low_spec_check.setText(texts["label"])
+        self.low_spec_check.setChecked(current_level > 0)
+        self.low_spec_check.blockSignals(False)
+
+        self.low_spec_combo.blockSignals(True)
+        self.low_spec_combo.clear()
+        for text, level in texts["levels"]:
+            self.low_spec_combo.addItem(text, level)
+        index = self.low_spec_combo.findData(current_level if current_level > 0 else current_combo_level)
+        if index >= 0:
+            self.low_spec_combo.setCurrentIndex(index)
+        self.low_spec_combo.setEnabled(current_level > 0)
+        self.low_spec_combo.blockSignals(False)
 
     def change_language(self, index):
         lang_code = self.lang_combo.currentData()
@@ -1661,6 +1796,7 @@ class SettingsDialog(QDialog):
         self.width_label.setText(self.tr("width"))
         self.length_label.setText(self.tr("length"))
         self.opacity_check.setText(self.tr("fade_out"))
+        self.refresh_low_spec_controls()
         self.startup_check.setText(self.tr("run_startup"))
         self.startup_apply_btn.setText(self.tr("apply"))
         self.quit_btn.setText(self.tr("quit"))
@@ -1756,6 +1892,7 @@ class SettingsDialog(QDialog):
         self.width_slider.setValue(self.overlay.trail_width)
         self.length_slider.setValue(self.overlay.trail_length)
         self.opacity_check.setChecked(self.overlay.opacity_decay)
+        self.refresh_low_spec_controls()
         self.refresh_color_list()
         self.refresh_profile_list()
         self.update_preview()
@@ -1859,13 +1996,35 @@ class SettingsDialog(QDialog):
         self.update_preview()
         self.overlay.save_current_state()
 
+    def update_low_spec_enabled(self, state):
+        enabled = (state == 2)
+        self.low_spec_combo.setEnabled(enabled)
+        if enabled:
+            level = self.low_spec_combo.currentData()
+            if level in (None, 0):
+                level = 1
+            self.overlay.set_low_spec_level(level)
+        else:
+            self.overlay.set_low_spec_level(0)
+        self.update_preview()
+
+    def update_low_spec_level(self, index):
+        if not self.low_spec_check.isChecked():
+            return
+        level = self.low_spec_combo.currentData()
+        if level is None:
+            return
+        self.overlay.set_low_spec_level(level)
+        self.update_preview()
+
     def update_preview(self):
         self.preview.update_settings(
             self.overlay.trail_style,
             self.overlay.trail_colors,
             self.overlay.trail_width,
             self.overlay.trail_length,
-            self.overlay.opacity_decay
+            self.overlay.opacity_decay,
+            self.overlay.low_spec_level
         )
 
 class TrailOverlay(QMainWindow):
@@ -1904,11 +2063,16 @@ class TrailOverlay(QMainWindow):
 
         # Trail Logic
         self.history = collections.deque(maxlen=self.trail_length)
+        self.trail_points = []
+        self.last_cursor_pos = None
+        self._last_trail_bounds = None
 
         # Timer for updates
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_overlay)
-        self.timer.start(16) # ~60 FPS
+        self.topmost_timer = QTimer(self)
+        self.topmost_timer.timeout.connect(self.ensure_topmost)
+        self.apply_performance_mode()
 
         # Settings place holders - Init before tray
         # Pass None as parent to allow independent Z-ordering to prevent covering
@@ -1988,6 +2152,7 @@ class TrailOverlay(QMainWindow):
     def open_settings(self):
         self.settings_dialog.showNormal()
         self.settings_dialog.activateWindow()
+        self.ensure_topmost()
 
     def load_settings(self):
         settings = self.profile_manager.get_current_settings()
@@ -1997,10 +2162,13 @@ class TrailOverlay(QMainWindow):
         self.trail_width = settings.get("width", 12)
         self.trail_length = settings.get("length", 20)
         self.opacity_decay = settings.get("opacity_decay", True)
+        self.low_spec_level = self.profile_manager.low_spec_level
         
         # Reset history maxlen
         if hasattr(self, 'history'):
             self.history = collections.deque(self.history, maxlen=self.trail_length)
+        if hasattr(self, 'timer'):
+            self.apply_performance_mode()
 
     def save_current_state(self):
         settings = {
@@ -2012,45 +2180,109 @@ class TrailOverlay(QMainWindow):
         }
         self.profile_manager.save_profile(self.profile_manager.current_profile, settings)
 
-    def open_settings(self):
-        self.settings_dialog.showNormal()
-        self.settings_dialog.activateWindow()
+    def set_low_spec_mode(self, enabled):
+        self.profile_manager.set_low_spec_mode(enabled)
+        self.low_spec_level = self.profile_manager.low_spec_level
+        self.apply_performance_mode()
+
+    def set_low_spec_level(self, level):
+        self.profile_manager.set_low_spec_level(level)
+        self.low_spec_level = self.profile_manager.low_spec_level
+        self.apply_performance_mode()
+
+    def apply_performance_mode(self):
+        self.low_spec_level = self.profile_manager.low_spec_level
+        preset = get_performance_preset(self.low_spec_level, preview=False)
+        self.smoothing_iterations = preset["smoothing_iterations"]
+        self.timer.setInterval(preset["interval_ms"])
+        if not self.timer.isActive():
+            self.timer.start()
+        self.topmost_timer.setInterval(TOPMOST_REFRESH_INTERVAL_MS)
+        if not self.topmost_timer.isActive():
+            self.topmost_timer.start()
+
+    def ensure_topmost(self):
+        hwnd = int(self.winId())
+        win32gui.SetWindowPos(
+            hwnd,
+            win32con.HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE
+        )
+
+    def _trail_is_settled(self, target):
+        if not self.trail_points:
+            return False
+
+        for point in self.trail_points:
+            if abs(point.x() - target.x()) > TRAIL_SETTLE_EPSILON:
+                return False
+            if abs(point.y() - target.y()) > TRAIL_SETTLE_EPSILON:
+                return False
+        return True
+
+    def _history_bounds(self, points):
+        if not points:
+            return None
+
+        margin = max(8, int(self.trail_width) + 6)
+        xs = [point.x() for point in points]
+        ys = [point.y() for point in points]
+        left = max(0, math.floor(min(xs) - margin))
+        top = max(0, math.floor(min(ys) - margin))
+        right = min(self.width() - 1, math.ceil(max(xs) + margin))
+        bottom = min(self.height() - 1, math.ceil(max(ys) + margin))
+
+        return QRect(left, top, max(1, right - left + 1), max(1, bottom - top + 1))
+
+    def _repaint_trail(self, previous_bounds):
+        new_bounds = self._history_bounds(self.history)
+        dirty_rect = new_bounds or previous_bounds
+        if previous_bounds and new_bounds:
+            dirty_rect = previous_bounds.united(new_bounds)
+
+        self._last_trail_bounds = new_bounds
+
+        if dirty_rect:
+            self.update(dirty_rect)
+        else:
+            self.update()
 
     def update_overlay(self):
-        # Update history
         pos = QCursor.pos()
-        mapped_pos_int = self.mapFromGlobal(pos)
-        mapped_pos = QPointF(mapped_pos_int)
+        mapped_pos = QPointF(self.mapFromGlobal(pos))
+        previous_bounds = self._last_trail_bounds
         
-        # Initialize or resize trail points
-        if not hasattr(self, 'trail_points') or len(self.trail_points) != self.trail_length:
-            if not hasattr(self, 'trail_points') or len(self.trail_points) == 0:
+        if len(self.trail_points) != self.trail_length:
+            if len(self.trail_points) == 0:
                 self.trail_points = [mapped_pos for _ in range(self.trail_length)]
             else:
                 while len(self.trail_points) < self.trail_length:
                     self.trail_points.append(self.trail_points[-1])
                 self.trail_points = self.trail_points[:self.trail_length]
-                    
-        # Apply follow (spring) algorithm for silky smooth tracking
+            self.history = collections.deque(self.trail_points, maxlen=self.trail_length)
+            self.last_cursor_pos = QPoint(pos)
+            self._repaint_trail(previous_bounds)
+            return
+
+        moved = self.last_cursor_pos is None or pos != self.last_cursor_pos
+        self.last_cursor_pos = QPoint(pos)
+
+        if not moved and self._trail_is_settled(mapped_pos):
+            return
+
         self.trail_points[0] = mapped_pos
         for i in range(1, self.trail_length):
             c = self.trail_points[i]
             t = self.trail_points[i-1]
-            # Easing factor: 0.45 gives a nice balance of tracking speed and smoothness
             self.trail_points[i] = QPointF(c.x() + (t.x() - c.x()) * 0.45, 
                                            c.y() + (t.y() - c.y()) * 0.45)
             
-        # Update history for rendering
         self.history = collections.deque(self.trail_points, maxlen=self.trail_length)
-            
-        self.update()
-        # Force overlay to be on top of everything, including the settings window
-        self.raise_()
-        
-        # Enforce TopMost Z-Order continuously (Fix for Taskbar/Start Menu)
-        hwnd = int(self.winId())
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, 
-                              win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+        self._repaint_trail(previous_bounds)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -2061,7 +2293,8 @@ class TrailOverlay(QMainWindow):
             self.trail_colors, 
             self.trail_width, 
             self.trail_length, 
-            self.opacity_decay
+            self.opacity_decay,
+            smoothing_iterations=self.smoothing_iterations
         )
 
 if __name__ == "__main__":
