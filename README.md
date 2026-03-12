@@ -13,11 +13,17 @@
 
 ---
 
-## 🆕 v1.0.12 업데이트
+## 🆕 v1.0.13 업데이트
 
-* 자동 업데이트가 GitHub 릴리즈의 임의 EXE가 아니라 `GoPoint.exe` 자산만 받도록 고정했습니다.
-* Windows 시작 프로그램 등록 경로를 따옴표로 저장해 공백 경로 해석 문제를 줄였습니다.
+* 마우스가 멈춘 상태에서는 불필요한 다시 그리기를 줄이고 topmost 재적용 빈도를 낮춰 저사양 PC에서 CPU/GPU 점유를 줄였습니다.
+* 저사양 모드를 `1단계`, `2단계`, `3단계`로 조절할 수 있게 바꿔 부드러움과 자원 사용량 사이를 선택할 수 있습니다.
 * 최신 배포 파일: **[GoPoint.exe](https://github.com/ruruoni1/GoPoint/releases/latest)**
+
+### 작업 관리자 예시
+
+오래된 PC 환경에서도 CPU 점유를 이전보다 낮춘 상태입니다. 아래 이미지는 실제 `v1.0.13` 실행 예시입니다.
+
+![GoPoint v1.0.13 performance screenshot](assets/images/performance-v1.0.13-task-manager.png)
 
 <br>
 

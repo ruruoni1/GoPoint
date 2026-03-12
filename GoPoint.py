@@ -37,7 +37,7 @@ import tempfile
 import subprocess
 import uuid
 
-APP_VERSION = "1.0.12"
+APP_VERSION = "1.0.13"
 RELEASE_ASSET_NAME = "GoPoint.exe"
 NORMAL_FRAME_INTERVAL_MS = 16
 NORMAL_SMOOTHING_ITERATIONS = 2
@@ -127,7 +127,13 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.12 (2026-03-09)</h2>
+        "changelog": """<h2>Ver 1.0.13 (2026-03-13)</h2>
+<ul>
+<li><b>성능 최적화:</b> 마우스가 멈춘 상태에서는 불필요한 다시 그리기를 줄이고, topmost 재적용 빈도를 낮춰 오래된 PC에서 CPU/GPU 점유를 줄였습니다.</li>
+<li><b>저사양 모드 단계 추가:</b> 저사양 환경에서 부드러움과 자원 사용량 사이를 조절할 수 있도록 3단계 저사양 모드를 추가했습니다.</li>
+</ul>
+
+<h2>Ver 1.0.12 (2026-03-09)</h2>
 <ul>
 <li><b>업데이트 자산 검증 강화:</b> 자동 업데이트가 GitHub 릴리즈의 임의 EXE가 아니라 <code>GoPoint.exe</code> 자산만 선택하도록 제한했습니다.</li>
 <li><b>시작 프로그램 경로 안전성 개선:</b> Windows 시작 프로그램 레지스트리에 실행 경로를 따옴표로 저장해 공백 경로 해석 문제를 줄였습니다.</li>
@@ -259,7 +265,13 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.12 (2026-03-09)</h2>
+        "changelog": """<h2>Ver 1.0.13 (2026-03-13)</h2>
+<ul>
+<li><b>Performance optimizations:</b> Reduced redundant repaints while the cursor is idle and stopped forcing topmost every frame to lower CPU/GPU load on older PCs.</li>
+<li><b>Tiered low-spec mode:</b> Added three low-spec levels so users can trade smoothness for lower resource usage.</li>
+</ul>
+
+<h2>Ver 1.0.12 (2026-03-09)</h2>
 <ul>
 <li><b>Safer update asset selection:</b> Auto-update now accepts only the <code>GoPoint.exe</code> release asset instead of the first EXE it finds.</li>
 <li><b>Quoted startup path:</b> The Windows startup registry entry now stores the executable path with quotes to avoid path parsing issues.</li>
@@ -561,7 +573,13 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.12 (2026-03-09)</h2>
+        "changelog": """<h2>Ver 1.0.13 (2026-03-13)</h2>
+<ul>
+<li><b>Leistungsoptimierungen:</b> Unnoetige Neuzeichnungen im Leerlauf wurden reduziert und das erzwungene Topmost-Refresh pro Frame entfernt, um CPU- und GPU-Last auf aelteren PCs zu senken.</li>
+<li><b>Abgestufter Low-Spec-Modus:</b> Drei Leistungsstufen erlauben jetzt einen besseren Ausgleich zwischen weicher Bewegung und geringerem Ressourcenverbrauch.</li>
+</ul>
+
+<h2>Ver 1.0.12 (2026-03-09)</h2>
 <ul>
 <li><b>Sicherere Auswahl des Update-Assets:</b> Das Auto-Update akzeptiert jetzt nur noch das Release-Asset <code>GoPoint.exe</code> statt irgendeiner EXE-Datei.</li>
 <li><b>Startpfad mit Anfuehrungszeichen:</b> Der Autostart-Registrywert speichert den EXE-Pfad jetzt in Anfuehrungszeichen, um Fehlinterpretationen bei Leerzeichen zu vermeiden.</li>
