@@ -37,7 +37,7 @@ import tempfile
 import subprocess
 import uuid
 
-APP_VERSION = "1.0.13"
+APP_VERSION = "1.0.14"
 RELEASE_ASSET_NAME = "GoPoint.exe"
 NORMAL_FRAME_INTERVAL_MS = 16
 NORMAL_SMOOTHING_ITERATIONS = 2
@@ -45,6 +45,20 @@ TOPMOST_REFRESH_INTERVAL_MS = 1200
 TRAIL_SETTLE_EPSILON = 0.75
 LOW_SPEC_LEVEL_DEFAULT = 0
 LOW_SPEC_LEVEL_LEGACY_ENABLED = 2
+
+
+def is_packaged_build():
+    return bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
+
+
+def get_packaged_executable_path():
+    if not is_packaged_build():
+        return None
+
+    exe_path = os.path.abspath(sys.executable)
+    if exe_path:
+        return exe_path
+    return None
 
 
 def clamp_low_spec_level(level):
@@ -127,7 +141,13 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.13 (2026-03-13)</h2>
+        "changelog": """<h2>Ver 1.0.14 (2026-03-13)</h2>
+<ul>
+<li><b>중요:</b> <code>v1.0.12</code> 사용자는 자동 업데이트 판별 오류 때문에 이번 한 번은 최신 설치 파일을 수동으로 받아 설치해야 합니다.</li>
+<li><b>패키지 EXE 판별 수정:</b> Nuitka로 빌드된 실행 파일도 정식 패키지 EXE로 인식하도록 수정해 자동 업데이트와 시작프로그램 등록이 정상 동작하게 했습니다.</li>
+</ul>
+
+<h2>Ver 1.0.13 (2026-03-13)</h2>
 <ul>
 <li><b>성능 최적화:</b> 마우스가 멈춘 상태에서는 불필요한 다시 그리기를 줄이고, topmost 재적용 빈도를 낮춰 오래된 PC에서 CPU/GPU 점유를 줄였습니다.</li>
 <li><b>저사양 모드 단계 추가:</b> 저사양 환경에서 부드러움과 자원 사용량 사이를 조절할 수 있도록 3단계 저사양 모드를 추가했습니다.</li>
@@ -265,7 +285,13 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.13 (2026-03-13)</h2>
+        "changelog": """<h2>Ver 1.0.14 (2026-03-13)</h2>
+<ul>
+<li><b>Important:</b> <code>v1.0.12</code> users need a one-time manual install of the latest build because the auto-update detection in v1.0.12 is broken.</li>
+<li><b>Packaged EXE detection fix:</b> Nuitka-built executables are now recognized as packaged builds so auto-update and startup registration work correctly.</li>
+</ul>
+
+<h2>Ver 1.0.13 (2026-03-13)</h2>
 <ul>
 <li><b>Performance optimizations:</b> Reduced redundant repaints while the cursor is idle and stopped forcing topmost every frame to lower CPU/GPU load on older PCs.</li>
 <li><b>Tiered low-spec mode:</b> Added three low-spec levels so users can trade smoothness for lower resource usage.</li>
@@ -573,7 +599,13 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.13 (2026-03-13)</h2>
+        "changelog": """<h2>Ver 1.0.14 (2026-03-13)</h2>
+<ul>
+<li><b>Wichtig:</b> Nutzer von <code>v1.0.12</code> muessen die aktuelle Version einmal manuell installieren, weil die Update-Erkennung in v1.0.12 fehlerhaft ist.</li>
+<li><b>Korrektur der EXE-Erkennung:</b> Mit Nuitka gebaute EXE-Dateien werden jetzt korrekt als Paket-Build erkannt, sodass Auto-Update und Autostart wieder funktionieren.</li>
+</ul>
+
+<h2>Ver 1.0.13 (2026-03-13)</h2>
 <ul>
 <li><b>Leistungsoptimierungen:</b> Unnoetige Neuzeichnungen im Leerlauf wurden reduziert und das erzwungene Topmost-Refresh pro Frame entfernt, um CPU- und GPU-Last auf aelteren PCs zu senken.</li>
 <li><b>Abgestufter Low-Spec-Modus:</b> Drei Leistungsstufen erlauben jetzt einen besseren Ausgleich zwischen weicher Bewegung und geringerem Ressourcenverbrauch.</li>
@@ -1214,8 +1246,8 @@ class AutoUpdater:
     def cleanup():
         """ Remove leftover .old files from previous updates """
         try:
-            if getattr(sys, 'frozen', False):
-                current_exe = sys.executable
+            current_exe = get_packaged_executable_path()
+            if current_exe:
                 old_exe = current_exe + ".old"
                 if os.path.exists(old_exe):
                     os.remove(old_exe)
@@ -1377,13 +1409,13 @@ class AutoUpdater:
 
         AutoUpdater._signal.download_finished.connect(on_download_finished)
 
-        if getattr(sys, 'frozen', False) and hasattr(parent_widget, 'setEnabled'):
+        if is_packaged_build() and hasattr(parent_widget, 'setEnabled'):
             parent_widget.setEnabled(False)
              
         def _download():
             result = {"error": None}
             try:
-                current_exe = sys.executable if getattr(sys, 'frozen', False) else None
+                current_exe = get_packaged_executable_path()
                 if not current_exe:
                     result["error"] = "Auto-update is only supported in the packaged .exe build."
                     return
@@ -1694,8 +1726,8 @@ class SettingsDialog(QDialog):
     def toggle_startup(self, state):
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
         app_name = "GoPoint"
-        exe_path = sys.executable
-        if not getattr(sys, 'frozen', False):
+        exe_path = get_packaged_executable_path()
+        if not exe_path:
              print(f"Startup toggle: {state} (Not frozen, skipping registry write)")
              return
 

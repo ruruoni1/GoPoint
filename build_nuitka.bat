@@ -5,7 +5,7 @@ set "ROOT=%~dp0"
 set "PYTHON=%ROOT%venv\Scripts\python.exe"
 set "OUTDIR=%ROOT%build\nuitka"
 set "DISTDIR=%ROOT%dist"
-set "VERSIONED_EXE=GoPoint_v1.0.13.exe"
+set "VERSIONED_EXE=GoPoint_v1.0.14.exe"
 
 if not exist "%PYTHON%" (
     echo Python executable not found: %PYTHON%
@@ -27,8 +27,8 @@ if not exist "%DISTDIR%" mkdir "%DISTDIR%"
   --output-filename=GoPoint.exe ^
   --product-name=GoPoint ^
   --company-name=GoVerseTV ^
-  --file-version=1.0.13.0 ^
-  --product-version=1.0.13 ^
+  --file-version=1.0.14.0 ^
+  --product-version=1.0.14 ^
   --file-description="GoPoint mouse trail overlay" ^
   "%ROOT%GoPoint.py"
 
