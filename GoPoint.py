@@ -7,6 +7,7 @@ import collections
 import math
 import shutil
 import webbrowser # For opening links
+from pathlib import Path
 
 # ... Imports ...
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QSystemTrayIcon, 
@@ -18,6 +19,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QSystemTrayIcon
 from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QEvent, QObject, pyqtSignal, QPointF, QRect
 from PyQt6.QtGui import (QAction, QIcon, QColor, QPainter, QPen, QBrush, 
                          QPolygonF, QCursor, QFont, QLinearGradient)
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -32,19 +34,29 @@ def resource_path(relative_path):
 import winreg # For Registry access
 import urllib.request
 import urllib.error
+import urllib.parse
 import threading
 import tempfile
 import subprocess
 import uuid
 
-APP_VERSION = "1.0.14"
+APP_VERSION = "1.0.16"
 RELEASE_ASSET_NAME = "GoPoint.exe"
+GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/ruruoni1/GoPoint/releases/latest"
+LOCAL_UPDATE_TEST_DIR_NAME = "update-test"
+LOCAL_UPDATE_MANIFEST_NAME = "update.json"
+STARTUP_REGISTRY_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+STARTUP_APP_NAME = "GoPoint"
+STARTUP_LAUNCH_ARGUMENT = "--startup"
+SINGLE_INSTANCE_MESSAGE_SHOW_SETTINGS = "show-settings"
+SINGLE_INSTANCE_MESSAGE_NOOP = "noop"
 NORMAL_FRAME_INTERVAL_MS = 16
 NORMAL_SMOOTHING_ITERATIONS = 2
 TOPMOST_REFRESH_INTERVAL_MS = 1200
 TRAIL_SETTLE_EPSILON = 0.75
 LOW_SPEC_LEVEL_DEFAULT = 0
 LOW_SPEC_LEVEL_LEGACY_ENABLED = 2
+SINGLE_INSTANCE_SERVER = None
 
 
 def is_packaged_build():
@@ -55,10 +67,332 @@ def get_packaged_executable_path():
     if not is_packaged_build():
         return None
 
+    # Nuitka onefile exposes the original launcher path through sys.argv[0].
+    exe_path = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else None
+    if exe_path:
+        return exe_path
+
     exe_path = os.path.abspath(sys.executable)
     if exe_path:
         return exe_path
     return None
+
+
+def get_source_script_path():
+    return os.path.abspath(__file__)
+
+
+def get_application_base_dir():
+    base_path = get_packaged_executable_path() if is_packaged_build() else get_source_script_path()
+    if base_path:
+        return os.path.dirname(base_path)
+    return os.getcwd()
+
+
+def get_single_instance_server_name():
+    if is_packaged_build():
+        return "GoPoint-packaged-instance"
+    return "GoPoint-source-instance"
+
+
+def get_startup_runtime_path():
+    if is_packaged_build():
+        return get_packaged_executable_path()
+
+    runtime_path = os.path.abspath(sys.executable)
+    if not runtime_path:
+        return None
+
+    runtime_dir = os.path.dirname(runtime_path)
+    runtime_name = os.path.basename(runtime_path).lower()
+    pythonw_path = os.path.join(runtime_dir, "pythonw.exe")
+    if runtime_name == "python.exe" and os.path.exists(pythonw_path):
+        return pythonw_path
+    return runtime_path
+
+
+def is_startup_launch():
+    startup_args = {STARTUP_LAUNCH_ARGUMENT, "/startup", "-startup"}
+    return any(arg.lower() in startup_args for arg in sys.argv[1:])
+
+
+def normalize_windows_path(path):
+    if not path:
+        return None
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
+def extract_executable_path_from_command(command):
+    if not command:
+        return None
+
+    command = command.strip()
+    if not command:
+        return None
+
+    if command.startswith('"'):
+        end_quote = command.find('"', 1)
+        if end_quote > 1:
+            return command[1:end_quote]
+
+    lower_command = command.lower()
+    exe_index = lower_command.find(".exe")
+    if exe_index != -1:
+        return command[:exe_index + 4]
+
+    return command.split(" ", 1)[0]
+
+
+def get_startup_command():
+    runtime_path = get_startup_runtime_path()
+    if not runtime_path:
+        return None
+
+    if is_packaged_build():
+        return f'"{runtime_path}" {STARTUP_LAUNCH_ARGUMENT}'
+
+    script_path = get_source_script_path()
+    if not script_path:
+        return None
+    return f'"{runtime_path}" "{script_path}" {STARTUP_LAUNCH_ARGUMENT}'
+
+
+def get_registered_startup_command():
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_REGISTRY_KEY, 0, winreg.KEY_READ)
+        value, _ = winreg.QueryValueEx(key, STARTUP_APP_NAME)
+        winreg.CloseKey(key)
+        return value
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+
+
+def is_startup_registered_for_current_build():
+    current_command = get_startup_command()
+    registered_command = get_registered_startup_command()
+    if not current_command or not registered_command:
+        return False
+
+    if is_packaged_build():
+        current_exe = get_packaged_executable_path()
+        registered_exe = extract_executable_path_from_command(registered_command)
+        return normalize_windows_path(registered_exe) == normalize_windows_path(current_exe)
+
+    return registered_command.strip() == current_command
+
+
+def set_startup_registry_enabled(enabled):
+    try:
+        key = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, STARTUP_REGISTRY_KEY, 0, winreg.KEY_SET_VALUE)
+        if enabled:
+            startup_command = get_startup_command()
+            if not startup_command:
+                winreg.CloseKey(key)
+                return False
+            winreg.SetValueEx(key, STARTUP_APP_NAME, 0, winreg.REG_SZ, startup_command)
+        else:
+            try:
+                winreg.DeleteValue(key, STARTUP_APP_NAME)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(key)
+        return True
+    except OSError as e:
+        print(f"Registry Error: {e}")
+        return False
+
+
+def repair_startup_registry_entry():
+    current_command = get_startup_command()
+    registered_command = get_registered_startup_command()
+    if not current_command or not registered_command:
+        return
+
+    if registered_command.strip() == current_command:
+        return
+
+    if is_packaged_build():
+        current_exe = get_packaged_executable_path()
+        registered_exe = extract_executable_path_from_command(registered_command)
+        if normalize_windows_path(registered_exe) != normalize_windows_path(current_exe):
+            return
+        set_startup_registry_enabled(True)
+
+
+def notify_existing_instance(server_name, message):
+    socket = QLocalSocket()
+    socket.connectToServer(server_name)
+    if not socket.waitForConnected(500):
+        return False
+
+    payload = message.encode("utf-8")
+    socket.write(payload)
+    socket.flush()
+    socket.waitForBytesWritten(500)
+    socket.disconnectFromServer()
+    return True
+
+
+def set_single_instance_server(server):
+    global SINGLE_INSTANCE_SERVER
+    SINGLE_INSTANCE_SERVER = server
+
+
+def release_single_instance_server():
+    if SINGLE_INSTANCE_SERVER:
+        SINGLE_INSTANCE_SERVER.close()
+
+
+def resume_single_instance_server():
+    if SINGLE_INSTANCE_SERVER:
+        return SINGLE_INSTANCE_SERVER.start()
+    return False
+
+
+def _path_to_file_uri(path):
+    return Path(os.path.abspath(path)).resolve().as_uri()
+
+
+def normalize_update_reference(reference, base_url=None):
+    if not reference:
+        return None
+
+    reference = reference.strip()
+    if not reference:
+        return None
+
+    parsed = urllib.parse.urlparse(reference)
+    if parsed.scheme in ("http", "https", "file"):
+        return reference
+
+    if os.path.isabs(reference):
+        return _path_to_file_uri(reference)
+
+    if base_url:
+        return urllib.parse.urljoin(base_url, reference.replace("\\", "/"))
+
+    return _path_to_file_uri(reference)
+
+
+def append_cache_bust(url, token):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return url
+
+    separator = "&" if parsed.query else "?"
+    return f"{url}{separator}t={token}"
+
+
+def get_configured_update_manifest_url(cache_bust_token):
+    override_reference = os.environ.get("GOPOINT_UPDATE_MANIFEST", "").strip()
+    if override_reference:
+        return normalize_update_reference(override_reference), "override"
+
+    local_manifest_path = os.path.join(
+        get_application_base_dir(),
+        LOCAL_UPDATE_TEST_DIR_NAME,
+        LOCAL_UPDATE_MANIFEST_NAME,
+    )
+    if os.path.exists(local_manifest_path):
+        return _path_to_file_uri(local_manifest_path), "local"
+
+    return append_cache_bust(GITHUB_LATEST_RELEASE_URL, cache_bust_token), "github"
+
+
+def load_update_manifest_json(manifest_url, timeout, headers=None):
+    parsed = urllib.parse.urlparse(manifest_url)
+    if parsed.scheme in ("http", "https"):
+        request = urllib.request.Request(manifest_url, headers=headers or {})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode())
+
+    with urllib.request.urlopen(manifest_url, timeout=timeout) as response:
+        return json.loads(response.read().decode())
+
+
+def open_update_download_stream(download_url, timeout, headers=None):
+    parsed = urllib.parse.urlparse(download_url)
+    if parsed.scheme in ("http", "https"):
+        request = urllib.request.Request(download_url, headers=headers or {})
+        return urllib.request.urlopen(request, timeout=timeout)
+
+    return urllib.request.urlopen(download_url, timeout=timeout)
+
+
+def parse_update_manifest(data, manifest_url, cache_bust_token):
+    result = {"latest_version": None, "asset_url": None, "error": None}
+
+    if "assets" in data or "tag_name" in data:
+        latest_tag = data.get("tag_name", "")
+        result["latest_version"] = latest_tag.lstrip("v")
+
+        for asset in data.get("assets", []):
+            if asset.get("name") == RELEASE_ASSET_NAME:
+                result["asset_url"] = append_cache_bust(asset.get("browser_download_url"), cache_bust_token)
+                break
+
+        if result["latest_version"] and not result["asset_url"]:
+            result["error"] = f"Release asset '{RELEASE_ASSET_NAME}' was not found."
+        return result
+
+    latest_version = data.get("version") or data.get("latest_version") or data.get("tag_name") or ""
+    result["latest_version"] = str(latest_version).lstrip("v") if latest_version else None
+
+    asset_reference = data.get("url") or data.get("asset_url")
+    if asset_reference:
+        asset_url = normalize_update_reference(asset_reference, manifest_url)
+        result["asset_url"] = append_cache_bust(asset_url, cache_bust_token)
+
+    if result["latest_version"] and not result["asset_url"]:
+        result["error"] = "Update manifest is missing a download URL."
+
+    return result
+
+
+class SingleInstanceServer(QObject):
+    def __init__(self, server_name, activation_callback, parent=None):
+        super().__init__(parent)
+        self.server_name = server_name
+        self.activation_callback = activation_callback
+        self.pending_activation = False
+        self.server = QLocalServer(self)
+        self.server.newConnection.connect(self._handle_new_connection)
+
+    def start(self):
+        if self.server.listen(self.server_name):
+            return True
+
+        QLocalServer.removeServer(self.server_name)
+        return self.server.listen(self.server_name)
+
+    def close(self):
+        self.server.close()
+        QLocalServer.removeServer(self.server_name)
+
+    def set_activation_callback(self, activation_callback):
+        self.activation_callback = activation_callback
+        if self.pending_activation and self.activation_callback:
+            self.pending_activation = False
+            QTimer.singleShot(0, self.activation_callback)
+
+    def _handle_new_connection(self):
+        while self.server.hasPendingConnections():
+            socket = self.server.nextPendingConnection()
+            socket.readyRead.connect(lambda s=socket: self._process_socket(s))
+            socket.disconnected.connect(socket.deleteLater)
+            if socket.bytesAvailable():
+                self._process_socket(socket)
+
+    def _process_socket(self, socket):
+        message = bytes(socket.readAll()).decode("utf-8", errors="ignore").strip()
+        if message == SINGLE_INSTANCE_MESSAGE_SHOW_SETTINGS:
+            if self.activation_callback:
+                QTimer.singleShot(0, self.activation_callback)
+            else:
+                self.pending_activation = True
+        socket.disconnectFromServer()
 
 
 def clamp_low_spec_level(level):
@@ -141,7 +475,22 @@ TRANSLATIONS = {
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>카카오톡 오픈채팅방 참여하기</a></p>""",
         "apply": "적용",
         "startup_applied": "자동 실행 설정이 적용되었습니다.",
-        "changelog": """<h2>Ver 1.0.14 (2026-03-13)</h2>
+        "startup_enabled": "자동 실행이 등록되었습니다.",
+        "startup_disabled": "자동 실행이 해제되었습니다.",
+        "startup_failed": "자동 실행 설정을 적용하지 못했습니다.",
+        "changelog": """<h2>Ver 1.0.16 (2026-03-16)</h2>
+<ul>
+<li><b>중복 실행 방지:</b> 트레이에 이미 실행 중인 인스턴스가 있으면 새 창을 띄우지 않고 기존 설정창만 다시 엽니다.</li>
+<li><b>로컬 업데이트 테스트 지원:</b> <code>update-test/update.json</code> 또는 <code>GOPOINT_UPDATE_MANIFEST</code>로 GitHub 없이 자동 업데이트를 시험할 수 있습니다.</li>
+</ul>
+
+<h2>Ver 1.0.15 (2026-03-16)</h2>
+<ul>
+<li><b>시작프로그램 경로 수정:</b> Nuitka onefile 빌드가 임시 <code>python.exe</code>를 등록하지 않고 원래 <code>GoPoint.exe</code> 경로를 사용하도록 수정했습니다.</li>
+<li><b>소스 실행 등록 지원:</b> <code>python GoPoint.py</code>로 실행한 경우에도 시작프로그램 등록이 가능하도록 보완했습니다.</li>
+</ul>
+
+<h2>Ver 1.0.14 (2026-03-13)</h2>
 <ul>
 <li><b>중요:</b> <code>v1.0.12</code> 사용자는 자동 업데이트 판별 오류 때문에 이번 한 번은 최신 설치 파일을 수동으로 받아 설치해야 합니다.</li>
 <li><b>패키지 EXE 판별 수정:</b> Nuitka로 빌드된 실행 파일도 정식 패키지 EXE로 인식하도록 수정해 자동 업데이트와 시작프로그램 등록이 정상 동작하게 했습니다.</li>
@@ -285,7 +634,22 @@ important moments shine brighter! \U0001f4aa</p>
 <p>\U0001f4ac <a href='https://open.kakao.com/o/gN0Fx9Df' style='color: #FEE500; text-decoration: none;'>Join KakaoTalk Open Chat</a></p>""",
         "apply": "Apply",
         "startup_applied": "Startup setting applied.",
-        "changelog": """<h2>Ver 1.0.14 (2026-03-13)</h2>
+        "startup_enabled": "Startup registration enabled.",
+        "startup_disabled": "Startup registration disabled.",
+        "startup_failed": "Failed to apply the startup setting.",
+        "changelog": """<h2>Ver 1.0.16 (2026-03-16)</h2>
+<ul>
+<li><b>Duplicate launch prevention:</b> When an instance is already running in the tray, launching the EXE again reopens the existing settings window instead of starting another copy.</li>
+<li><b>Local update test support:</b> Auto-update can now use <code>update-test/update.json</code> or <code>GOPOINT_UPDATE_MANIFEST</code> for non-GitHub test runs.</li>
+</ul>
+
+<h2>Ver 1.0.15 (2026-03-16)</h2>
+<ul>
+<li><b>Startup path fix:</b> Nuitka onefile builds now register the original <code>GoPoint.exe</code> path instead of a temporary <code>python.exe</code>.</li>
+<li><b>Source-run support:</b> Startup registration now also works when the app is launched with <code>python GoPoint.py</code>.</li>
+</ul>
+
+<h2>Ver 1.0.14 (2026-03-13)</h2>
 <ul>
 <li><b>Important:</b> <code>v1.0.12</code> users need a one-time manual install of the latest build because the auto-update detection in v1.0.12 is broken.</li>
 <li><b>Packaged EXE detection fix:</b> Nuitka-built executables are now recognized as packaged builds so auto-update and startup registration work correctly.</li>
@@ -599,7 +963,21 @@ important moments shine brighter! 💪</p>
 <p>👉 <a href='https://www.youtube.com/@GOVERSE82' style='color: #4da6ff;'>Visit 'GoVerseTV' on YouTube</a></p>""",
         "apply": "Anwenden",
         "startup_applied": "Starteinstellungen angewendet.",
-        "changelog": """<h2>Ver 1.0.14 (2026-03-13)</h2>
+        "startup_enabled": "Autostart wurde aktiviert.",
+        "startup_disabled": "Autostart wurde deaktiviert.",
+        "changelog": """<h2>Ver 1.0.16 (2026-03-16)</h2>
+<ul>
+<li><b>Mehrfachstart verhindert:</b> Wenn bereits eine Instanz im Tray laeuft, oeffnet ein neuer Start nur das vorhandene Einstellungsfenster.</li>
+<li><b>Lokale Update-Tests:</b> Auto-Update kann jetzt ueber <code>update-test/update.json</code> oder <code>GOPOINT_UPDATE_MANIFEST</code> ohne GitHub getestet werden.</li>
+</ul>
+
+<h2>Ver 1.0.15 (2026-03-16)</h2>
+<ul>
+<li><b>Autostart-Pfad korrigiert:</b> Nuitka-Onefile-Builds registrieren jetzt den echten <code>GoPoint.exe</code>-Pfad statt einer temporaeren <code>python.exe</code>.</li>
+<li><b>Unterstuetzung fuer Quellstart:</b> Die Autostart-Registrierung funktioniert jetzt auch bei Starts mit <code>python GoPoint.py</code>.</li>
+</ul>
+
+<h2>Ver 1.0.14 (2026-03-13)</h2>
 <ul>
 <li><b>Wichtig:</b> Nutzer von <code>v1.0.12</code> muessen die aktuelle Version einmal manuell installieren, weil die Update-Erkennung in v1.0.12 fehlerhaft ist.</li>
 <li><b>Korrektur der EXE-Erkennung:</b> Mit Nuitka gebaute EXE-Dateien werden jetzt korrekt als Paket-Build erkannt, sodass Auto-Update und Autostart wieder funktionieren.</li>
@@ -1318,27 +1696,17 @@ class AutoUpdater:
             result = {"latest_version": None, "asset_url": None, "error": None}
             try:
                 import time
-                # Bypass GitHub API cache
-                url = f'https://api.github.com/repos/ruruoni1/GoPoint/releases/latest?t={int(time.time())}'
-                req = urllib.request.Request(url, headers={
+                cache_bust_token = str(int(time.time()))
+                manifest_url, update_source = get_configured_update_manifest_url(cache_bust_token)
+                headers = {
                     'User-Agent': 'GoPoint-Updater',
                     'Cache-Control': 'no-cache',
                     'Pragma': 'no-cache'
-                })
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    data = json.loads(response.read().decode())
-                    latest_tag = data.get('tag_name', '')
-                    result["latest_version"] = latest_tag.lstrip('v')
-                    
-                    for asset in data.get('assets', []):
-                        if asset.get('name') == RELEASE_ASSET_NAME:
-                            # Bypass CDN cache if possible
-                            base_url = asset['browser_download_url']
-                            result["asset_url"] = f"{base_url}?t={int(time.time())}"
-                            break
-
-                    if result["latest_version"] and not result["asset_url"]:
-                        result["error"] = f"Release asset '{RELEASE_ASSET_NAME}' was not found."
+                }
+                data = load_update_manifest_json(manifest_url, timeout=10, headers=headers)
+                result = parse_update_manifest(data, manifest_url, cache_bust_token)
+                if update_source != "github":
+                    print(f"Using {update_source} update manifest: {manifest_url}")
             except Exception as e:
                 result["error"] = str(e)
             
@@ -1414,6 +1782,7 @@ class AutoUpdater:
              
         def _download():
             result = {"error": None}
+            released_instance_server = False
             try:
                 current_exe = get_packaged_executable_path()
                 if not current_exe:
@@ -1430,21 +1799,25 @@ class AutoUpdater:
                 try:
                     # 2. Download new EXE to the original path
                     # Note: download_url already has timestamp from _run
-                    req = urllib.request.Request(download_url, headers={
+                    headers = {
                         'User-Agent': 'GoPoint-Updater',
                         'Cache-Control': 'no-cache',
                         'Pragma': 'no-cache'
-                    })
-                    with urllib.request.urlopen(req, timeout=120) as response, open(current_exe, 'wb') as out_file:
+                    }
+                    with open_update_download_stream(download_url, timeout=120, headers=headers) as response, open(current_exe, 'wb') as out_file:
                         shutil.copyfileobj(response, out_file)
                     
                     # 3. Start the NEW exe
+                    release_single_instance_server()
+                    released_instance_server = True
                     subprocess.Popen([current_exe], shell=False)
                 except Exception as e:
                     # Rollback if download fails
                     if os.path.exists(old_exe):
                         if os.path.exists(current_exe): os.remove(current_exe)
                         os.rename(old_exe, current_exe)
+                    if released_instance_server:
+                        resume_single_instance_server()
                     raise e
                  
             except Exception as e:
@@ -1708,41 +2081,22 @@ class SettingsDialog(QDialog):
         self.update_preview()
         
     def check_startup_registry(self):
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
-            value, _ = winreg.QueryValueEx(key, "GoPoint")
-            winreg.CloseKey(key)
-            return True
-        except FileNotFoundError:
-            return False
-        except Exception:
-            return False
+        return is_startup_registered_for_current_build()
 
     def apply_startup_setting(self):
-        state = 2 if self.startup_check.isChecked() else 0
-        self.toggle_startup(state)
-        QMessageBox.information(self, self.tr("title"), self.tr("startup_applied"))
+        desired_enabled = self.startup_check.isChecked()
+        applied = self.toggle_startup(desired_enabled)
+        actual_enabled = self.check_startup_registry()
+        self.startup_check.setChecked(actual_enabled)
 
-    def toggle_startup(self, state):
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        app_name = "GoPoint"
-        exe_path = get_packaged_executable_path()
-        if not exe_path:
-             print(f"Startup toggle: {state} (Not frozen, skipping registry write)")
-             return
+        if applied and actual_enabled == desired_enabled:
+            message_key = "startup_enabled" if desired_enabled else "startup_disabled"
+            QMessageBox.information(self, self.tr("title"), self.tr(message_key))
+        else:
+            QMessageBox.warning(self, self.tr("warning"), self.tr("startup_failed"))
 
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-            if state == 2: # Checked
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"')
-            else: # Unchecked
-                try:
-                    winreg.DeleteValue(key, app_name)
-                except FileNotFoundError:
-                    pass
-            winreg.CloseKey(key)
-        except Exception as e:
-            print(f"Registry Error: {e}")
+    def toggle_startup(self, enabled):
+        return set_startup_registry_enabled(bool(enabled))
 
     def show_history(self):
         dlg = ChangelogDialog(self, self.overlay.profile_manager.language)
@@ -2170,9 +2524,11 @@ class TrailOverlay(QMainWindow):
         
         # Initial text update
         self.update_tray_text()
-        
-        # Show settings on startup
-        self.open_settings()
+
+        repair_startup_registry_entry()
+
+        if not is_startup_launch():
+            self.open_settings()
         
         # Check for updates in background
         AutoUpdater.check_and_prompt(self.settings_dialog, self.profile_manager, manual_check=False)
@@ -2201,6 +2557,7 @@ class TrailOverlay(QMainWindow):
 
     def open_settings(self):
         self.settings_dialog.showNormal()
+        self.settings_dialog.raise_()
         self.settings_dialog.activateWindow()
         self.ensure_topmost()
 
@@ -2349,6 +2706,15 @@ class TrailOverlay(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    server_name = get_single_instance_server_name()
+    activation_message = SINGLE_INSTANCE_MESSAGE_NOOP if is_startup_launch() else SINGLE_INSTANCE_MESSAGE_SHOW_SETTINGS
+    if notify_existing_instance(server_name, activation_message):
+        sys.exit(0)
+
+    single_instance_server = SingleInstanceServer(server_name, None, app)
+    if not single_instance_server.start():
+        sys.exit(1)
+    set_single_instance_server(single_instance_server)
     
     # Set Application Icon
     icon_path = resource_path("icon.png")
@@ -2362,6 +2728,8 @@ if __name__ == "__main__":
     AutoUpdater.cleanup()
     
     overlay = TrailOverlay()
+    single_instance_server.set_activation_callback(overlay.open_settings)
+    app.aboutToQuit.connect(single_instance_server.close)
     overlay.show()
     
     sys.exit(app.exec())

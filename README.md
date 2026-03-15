@@ -13,13 +13,14 @@
 
 ---
 
-## 🆕 v1.0.14 업데이트
+## 🆕 v1.0.16 업데이트
 
 > **중요**
 > `v1.0.12` 사용자는 자동 업데이트 판별 오류 때문에 **이번 한 번은 수동 설치가 필요합니다.**
 > 최신 파일은 릴리즈 페이지의 **[GoPoint.exe](https://github.com/ruruoni1/GoPoint/releases/latest)** 를 직접 받아 설치해 주세요.
 
-* Nuitka 빌드 EXE도 정식 패키지 실행으로 인식하도록 수정해 자동 업데이트와 시작프로그램 등록이 다시 정상 동작합니다.
+* 트레이에 이미 실행 중인 인스턴스가 있으면 새 창을 띄우지 않고 기존 설정창만 다시 열도록 중복 실행을 막았습니다.
+* `update-test/update.json` 또는 `GOPOINT_UPDATE_MANIFEST`를 사용해 GitHub 없이도 로컬 자동 업데이트 테스트를 할 수 있습니다.
 * `v1.0.13`에서 추가한 성능 최적화와 `1단계`, `2단계`, `3단계` 저사양 모드는 그대로 유지됩니다.
 * 최신 배포 파일: **[GoPoint.exe](https://github.com/ruruoni1/GoPoint/releases/latest)**
 
