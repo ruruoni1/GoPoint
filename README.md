@@ -3,6 +3,8 @@
 [![Release](https://img.shields.io/github/v/release/ruruoni1/GoPoint?label=Latest%20Release&color=blue)](https://github.com/ruruoni1/GoPoint/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+[공식 사이트](https://ruruoni1.github.io/GoPoint/) | [English](https://ruruoni1.github.io/GoPoint/en/) | [README in English](https://github.com/ruruoni1/GoPoint/blob/main/README.en.md)
+
 **GoPoint**는 튜토리얼 영상, 프레젠테이션, 또는 화면 공유 중에 시청자가 마우스 커서를 놓치지 않도록 직관적이고 아름다운 꼬리(Trail) 효과를 더해주는 윈도우용 유틸리티 프로그램입니다.
 
 기존 마우스 효과 프로그램들의 뚝뚝 끊기는 현상을 완벽히 해결하고, **물리 스프링(Spring) 알고리즘**을 적용하여 엄청나게 부드럽고 자연스럽게 쫓아오는 마우스 트레일을 경험해 보세요! ✨
