@@ -3,38 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GoPoint | Mouse Trail Overlay</title>
-  <meta name="description" content="GoPoint is a lightweight Windows mouse trail overlay with smooth motion, startup support, auto-update, and Korean/English pages.">
+  <title>GoPoint | Redirecting</title>
+  <meta name="description" content="GoPoint official website language redirect.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/styles.css">
+  <script>
+    (function () {
+      var language = (navigator.language || navigator.userLanguage || "").toLowerCase();
+      var target = language.indexOf("ko") === 0 ? "ko/" : "en/";
+      window.location.replace(target);
+    })();
+  </script>
 </head>
 <body class="site-shell">
   <div class="page-glow"></div>
   <main class="landing">
     <section class="hero-card">
       <p class="eyebrow">GoPoint Official Site</p>
-      <h1>Mouse trails that stay readable, fast, and clean.</h1>
+      <h1>Redirecting to your language page.</h1>
       <p class="hero-copy">
-        GoPoint is a Windows mouse trail overlay for tutorials, presentations, streaming, and screen sharing.
-        Choose your language below and jump to the full product page.
+        If the redirect does not happen automatically, choose a page below.
       </p>
       <div class="language-grid">
         <a class="language-card" href="ko/">
-          <span class="language-tag">한국어</span>
-          <strong>한국어 페이지</strong>
-          <span>기능 소개, 다운로드, 업데이트 안내, 성능 정보</span>
+          <span class="language-tag">Korean</span>
+          <strong>Korean Page</strong>
+          <span>Open the Korean product page.</span>
         </a>
         <a class="language-card" href="en/">
           <span class="language-tag">English</span>
           <strong>English Page</strong>
-          <span>Features, download links, update notes, and performance overview</span>
+          <span>Open the English product page.</span>
         </a>
-      </div>
-      <div class="hero-actions">
-        <a class="button button-primary" href="https://github.com/ruruoni1/GoPoint/releases/latest">Download Latest</a>
-        <a class="button button-secondary" href="https://github.com/ruruoni1/GoPoint">GitHub Repository</a>
       </div>
     </section>
   </main>
